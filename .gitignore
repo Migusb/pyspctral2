@@ -1,5 +1,5 @@
 ./C_code/tmp.c
 ./C_code/tmp.out
-./out/
-./old/
+./out/*
+./old/*
 ./*.pyc
