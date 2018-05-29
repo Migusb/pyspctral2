@@ -250,7 +250,7 @@ int S_spectral2 (struct specdattype *specdat)
     }
     
     /* Save solar zenith angle calculated using solpos */
-    specdat->zenref = soldat->zenref
+    specdat->zenref = soldat->zenref;
  
     ct       = cos ( soldat->tilt / raddeg );
     cz       = cos ( soldat->zenref / raddeg );

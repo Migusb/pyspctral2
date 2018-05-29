@@ -78,7 +78,7 @@ int main ( )
 
     /* print solar zenith angle (calculated by solpos)
        units: not sure */
-    printf ( "%.5f", specdat->zenref )
+    printf ( "%.5f\n", specdat->zenref );
 
     /*printf ( "micron  direct  diffuse\n" );*/
     int i;
