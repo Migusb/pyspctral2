@@ -76,6 +76,10 @@ int main ( )
     /* run the model */
     S_spectral2 ( specdat );
 
+    /* print solar zenith angle (calculated by solpos)
+       units: not sure */
+    printf ( "%.5f", specdat->zenref )
+
     /*printf ( "micron  direct  diffuse\n" );*/
     int i;
     for (i = 0; i < 122; i++) {{
