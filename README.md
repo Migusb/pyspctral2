@@ -4,7 +4,7 @@ Basic Python wrapper for functionality of the SPCTRAL2 atmospheric radiative tra
 ## SPCTRAL2
 
 The Bird Simple Spectral Model v2 ([SPCTRAL2](http://rredc.nrel.gov/solar/models/spectral/)) is a simple atmospheric radiative transfer model that predicts spectral irradiance at the surface.
-* 122 bands, in region 0.3--4.0 microns, with higher spectral resolution in UV and Vis
+* 122 bands, in region 0.3&ndash;4.0 &nu;, with higher spectral resolution in UV and Vis
 * Predicts diffuse light and direct solar beam
 * Processes modeled using semi-empirical exponential extinction:
   * Ozone
