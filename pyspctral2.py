@@ -137,7 +137,7 @@ class spctral2():
 
         I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[PAR_wl]*1e-6)) ).sum() / 6.022e23 * 1e6
 
-        assert( np.all(np.isclose(PAR_spectral2_2, PAR_measured)) )
+        assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
 
 
         #> save corrected spectra
@@ -150,7 +150,10 @@ class spctral2():
             fmt=['%.3e', '%.3e', '%.6e', '%.6e'])
 
 
-
+        #> plot if desired
+        #if plot == True:
+        
+            
 
 
 
