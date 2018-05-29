@@ -109,6 +109,8 @@ struct specdattype
 	float timezone;	     /* I:  Time zone, east (west negative). */
 	float temp; 		 /* I:  Ambient dry-bulb temperature, degrees C */
 	float watvap;        /* I:  Precipitable water vapor (cm) */
+    
+        float zenref;  /* solar zenith angle */
 };
 
 /*============================================================================
