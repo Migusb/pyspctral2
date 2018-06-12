@@ -212,7 +212,7 @@ def combine(casename='blah', time=[], info=''):
     files_raw.sort()
     files_corrected.sort()
 
-    assert( len(files_raw) == len(time) )
+    assert( len(files_raw) == len(time) and len(files_raw) == len(files_corrected) )
     nt = len(time)
     nwl = 122
 
@@ -220,6 +220,7 @@ def combine(casename='blah', time=[], info=''):
     sdt = [dtx.strftime('%Y-%m-%d %H:%M:%S') for dtx in time]
 
     #> get sza from 1st line of the raw files
+    #  SPCTRAL2 calculates it using the NREL SPA
     sza = []
     for i in range(len(files_raw)):
         with open(files_raw[i], 'r') as f:
@@ -230,16 +231,18 @@ def combine(casename='blah', time=[], info=''):
     Idr = np.zeros((nt, nwl))
     Idf = np.zeros_like(Idr)
     for i, f in enumerate(files_corrected):
+        #print i, f
         wl, dwl, Idri, Idfi = np.loadtxt(f, delimiter=',', unpack=True)
         Idr[i,:] = Idri
         Idf[i,:] = Idfi    
 
     #> create dataset
     dset = xr.Dataset(\
-        coords={'wl': (wl, {'units': 'um'}), 'time': time}, 
+        coords={'wl': ('wl', wl, {'units': micron, 'longname': 'wavelength'}), 
+                'time': time}, 
         data_vars={\
-            'Idr': (['time', 'wl'], Idr, {'units': 'W m^-2 um^-1', 'longname': 'Direct beam solar irradiance'}),
-            'Idf': (['time', 'wl'], Idf, {'units': 'W m^-2 um^-1', 'longname': 'Diffuse solar irradiance'}),
+            'Idr': (['time', 'wl'], Idr, {'units': 'W m^-2 um^-1', 'longname': 'direct beam solar irradiance'}),
+            'Idf': (['time', 'wl'], Idf, {'units': 'W m^-2 um^-1', 'longname': 'diffuse solar irradiance'}),
             'dwl': ('wl', dwl, {'units': 'um', 'longname': 'wavelength band width'}),
             'sdt': ('time', sdt, {'longname': 'datetime string'}),
             },
