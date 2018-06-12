@@ -18,6 +18,7 @@ import xarray as xr
 C_code_path = './C_code'  # loc of SPCTRAL2 and solpos C code
 cwd = os.getcwd()
 
+micron = u'\u03BCm'
 
 with open('./C_code/run_spctral2_template.c', 'r') as f:
     C_template = f.read()
@@ -205,6 +206,7 @@ def combine(casename='blah', time=[], info=''):
       vars: dwl, Idr, Idf, sdatetime, T, p, ozone, watvap, tau500
     """
 
+    #> get lists of files and sort
     files_raw = glob('./out/{:s}/raw/*.csv'.format(casename))
     files_corrected = glob('./out/{:s}/corrected/*.csv'.format(casename))
     files_raw.sort()
@@ -215,7 +217,7 @@ def combine(casename='blah', time=[], info=''):
     nwl = 122
 
     #> time variables
-    sdatetime = [dtx.strftime('%Y-%m-%d %H:%M:%S') for dtx in time]
+    sdt = [dtx.strftime('%Y-%m-%d %H:%M:%S') for dtx in time]
 
     #> get sza from 1st line of the raw files
     sza = []
@@ -233,11 +235,13 @@ def combine(casename='blah', time=[], info=''):
         Idf[i,:] = Idfi    
 
     #> create dataset
-    dset = xr.Dataset(coords={'wl': wl, 'time': time}, 
+    dset = xr.Dataset(\
+        coords={'wl': (wl, {'units': 'um'}), 'time': time}, 
         data_vars={\
             'Idr': (['time', 'wl'], Idr, {'units': 'W m^-2 um^-1', 'longname': 'Direct beam solar irradiance'}),
             'Idf': (['time', 'wl'], Idf, {'units': 'W m^-2 um^-1', 'longname': 'Diffuse solar irradiance'}),
-            'sdatetime': ('time', sdatetime),
+            'dwl': ('wl', dwl, {'units': 'um', 'longname': 'wavelength band width'}),
+            'sdt': ('time', sdt, {'longname': 'datetime string'}),
             },
         attrs={'casename': casename, 'info': info},
         )
