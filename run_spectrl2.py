@@ -16,12 +16,13 @@ import numpy as np
 from tqdm import tqdm
 
 import pyspctral2 as psp2
-
+reload(psp2)  # < so changes take effect when the module is edited..
 
 #> location of Chesnut Ridge canopy site
 lon = -84.2875
 lat = 35.9583
 
+#> construct datetimes manually
 #year = 2014
 #month = 7
 #day = 14
@@ -81,16 +82,16 @@ for i, line in enumerate(tqdm(env_data[:])):
     #print year, month, day, hour, minute, second
  
 
-    model = psp2.model(lon=lon, lat=lat,
-            year=year, month=month, day=day,
-            hour=hour, minute=minute, second=second,
-            utcoffset=-5.,
-            temp=Tair_C, press=p_mb,
-            casename=casename, ID=ID)
+#    model = psp2.model(lon=lon, lat=lat,
+#            year=year, month=month, day=day,
+#            hour=hour, minute=minute, second=second,
+#            utcoffset=-5.,
+#            temp=Tair_C, press=p_mb,
+#            casename=casename, ID=ID)
+#
+    #model.run()
 
-    model.run()
-
-    model.correct(measured_val=PPFD, measured_bnds=(0.3, 0.7))
+    #model.correct(measured_val=PPFD, measured_bnds=(0.3, 0.7))
 
 
 #> combine
