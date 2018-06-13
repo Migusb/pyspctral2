@@ -94,7 +94,7 @@ class model():
             f.writelines(C_code)
 
         #> compile C code
-        xfname = 'tmp.out'
+        xfname = 'tmp.o'
         cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
         call(cmd.split())
         os.chdir(cwd)
