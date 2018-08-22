@@ -245,6 +245,7 @@ def combine(casename='blah', time=[], info=''):
             'Idf': (['time', 'wl'], Idf, {'units': 'W m^-2 um^-1', 'longname': 'diffuse solar irradiance'}),
             'dwl': ('wl', dwl, {'units': 'um', 'longname': 'wavelength band width'}),
             'sdt': ('time', sdt, {'longname': 'datetime string'}),
+            'sza': ('time', sza, {'units': 'deg.', 'longname': 'solar zenith angle'}),
             },
         attrs={'casename': casename, 'info': info},
         )
