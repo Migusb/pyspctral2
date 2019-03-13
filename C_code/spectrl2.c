@@ -222,7 +222,7 @@ int S_spectral2 (struct specdattype *specdat)
         return ( -1 );
     }
     if ( specdat->watvap > 100.0 || specdat->watvap < 0.0 ) {
-        printf ( "*** S_spectral2 -> atvap should not be %f\n", specdat->watvap );
+        printf ( "*** S_spectral2 -> watvap should not be %f\n", specdat->watvap );
         return ( -1 );
     }
     if ( specdat->assym >= 1.0 || specdat->assym <= 0.0 ) {

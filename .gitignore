@@ -1,6 +1,8 @@
 /notes
-/C_code/tmp.c
-/C_code/tmp.out
+/C_code/tmp.*
 /out/*
 /old/*
-*.pyc
+
+__pycache__/
+.vscode/
+.DS_Store

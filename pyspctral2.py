@@ -1,43 +1,74 @@
 
 """
-
 Python module to run the SPCTRAL2 C code and catch output
+
+
+typical call sequence:
+.. code-block::
+   import pyspctral2 as psp2
 
 """
 
 import datetime as dt
 from glob import glob
 import os
-from pathlib2 import Path
+#from pathlib2 import Path  # for py2 compatability
 from subprocess import call
 
 import numpy as np
 import xarray as xr
 
 
-C_code_path = './C_code'  # loc of SPCTRAL2 and solpos C code
+_this_dir = os.path.dirname(os.path.realpath(__file__))
+C_code_path = '{:s}/C_code'.format(_this_dir)  # loc of SPCTRAL2 and solpos C code
+C_template_path = '{:s}/run_spctral2_template.c'.format(C_code_path)
 cwd = os.getcwd()
 
 micron = u'\u03BCm'
 
-with open('./C_code/run_spctral2_template.c', 'r') as f:
+with open(C_template_path, 'r') as f:
     C_template = f.read()
 
 
 class model():
-    """ Wrapper for the SPCTRAL2 model (C version)
+    """Wrapper for the SPCTRAL2 model (C version).
     
     Note that there are no runtime options in the original model,
     so we compile every time (not very efficient...)
+    but luckily it takes very little time to run. 
+
+    Initialization parameters
+    -----------------------------
+    tau500 : float
+        aerosol optical depth at 0.5 um (500 nm), base e
+        set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
+        default value (from original C example run script) = 0.2, from Excel version = 0.27 (midrange)
+        typical range [0.05, 0.55] for clear sky
+    watvap : float
+        column precipitable water vapor (cm)
+        set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
+        default value (from original C example run script) = 1.36, from Excel version = 1.42
+        typical range [0.3, 6]
+    ozone : float
+        total column ozone (cm)
+        set to -1.0 for an internal (SPCTRAL2) estimation based on lat/lon and time of day/year (Heuklon 1978)
+        default value (from original C example run script) = -1.0
+    casename : str
+        name of the case, used to create a directory for saving the outputs
+        default = 'test'
+    ID : str
+        identifier used for the saved output filename
+        default = '001'
 
     """
 
     def __init__(self, 
-        lat=45.0, lon=-80.0, 
+        lat=40.0, lon=-105.0, 
         year=2014, month=7, day=1,
         hour=12, minute=0, second=0,
         utcoffset=-5.,
-        temp=20, press=1000,
+        temp=27, press=1010,
+        tau500=0.27, watvap=1.42, ozone=-1.0, 
         casename='test', ID='001'
         ):
 
@@ -50,12 +81,16 @@ class model():
         self.hour = hour
         self.minute = minute
         self.second = second
-        self.utcoffset = utcoffset       
+        self.utcoffset = utcoffset
+        self.dt = dt.datetime(year, month, day, hour, minute, second)  # could add timezone info?
  
-        self.temp = temp  # near-sfc air temp (deg. C)
+        self.temp = temp    # near-sfc air temp (deg. C)
         self.press = press  # near-sfc air pressure (mb)
 
         # ozone, water, etc
+        self.tau500 = tau500
+        self.watvap = watvap
+        self.ozone = ozone
 
         #> get ready for output
 
@@ -63,13 +98,17 @@ class model():
         self.ID = ID  # identifier for one run of the group
         dirbases = ['img', 'raw', 'corrected']
         dirroot = './out/{:s}'.format(casename)
+        
+        # TODO: check if desired ID already exists in the out dir and give warning or error
+        # TODO: instead of 'out', more descriptive name (like pyspctral2_out) 
+        #       for output directory (needs to be changed multiple places)
 
         self.outdir = dirroot
 
         for dirbase in dirbases:
-            #os.makedirs(dirroot+dirbase, exist_ok=True)  # exist_ok only in py3 version
-            ps = '{:s}/{:s}'.format(dirroot, dirbase)
-            Path(ps).mkdir(parents=True, exist_ok=True)
+            os.makedirs('{:s}/{:s}'.format(dirroot, dirbase), exist_ok=True)  # exist_ok only in py3 version
+            #ps = '{:s}/{:s}'.format(dirroot, dirbase)  # py2 exist_ok workaround using pathlib2
+            #Path(ps).mkdir(parents=True, exist_ok=True)
 
         self.raw_ofname = '{:s}/raw/{:s}.csv'.format(self.outdir, self.ID)
         self.corrected_ofname = '{:s}/corrected/{:s}.csv'.format(self.outdir, self.ID)
@@ -84,7 +123,9 @@ class model():
                 year=self.year, month=self.month, day=self.day,
                 hour=self.hour, minute=self.minute, second=self.second,
                 utcoffset=self.utcoffset,
-                temp=self.temp, press=self.press)
+                temp=self.temp, press=self.press, 
+                tau500=self.tau500, watvap=self.watvap, ozone=self.ozone,
+                )
         #print C_code
         
         os.chdir(C_code_path)
@@ -94,8 +135,9 @@ class model():
             f.writelines(C_code)
 
         #> compile C code
-        xfname = 'tmp.o'
-        cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
+        xfname = 'tmp.out'
+        #cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
+        cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
         call(cmd.split())
         os.chdir(cwd)
 
@@ -110,18 +152,27 @@ class model():
         
 
     def correct(self, 
-        measured_val=None, measured_bnds=()):
-        """ 
-        Check for negative values and report ToD and PPFD
+        measured_units='E', measured_val=None, measured_bnds=(0.4, 0.7),
+        plot=False,
+        ):
+        """Apply corrections to raw SPCTRAL2 outputs
 
-        Change negative values (unphysical)
-        and unrealistically high values to 0
+        1. Check for negative values and report ToD and PPFD
+
+        2. Change negative values (unphysical) and unrealistically high values to 0
         as well as nan's
 
-        Correct total irradiance using a broadband measurement
-          PAR, total, Vis, UV, etc
-          Bounds of the measured irradiance value in microns!
-            Assumes units umol photons / m^2 / s for the measured value
+        3. Correct total irradiance using a broadband measurement
+        e.g., PAR, total, Vis, UV, etc
+          
+        Parameters
+        ----------
+        measured_units : str
+            'E' (W/m^2) or 'photons' (photon flux density)
+        measured_val : float
+            A measured broadband irradiance value (umol photons / m^2 / s)
+        measured_bnds : tuple
+            Wavelength band bounds for the measured irradiance value (um) 
 
 
         """
@@ -161,12 +212,22 @@ class model():
         assert( len(measured_bnds) == 2 and measured_bnds[0] < measured_bnds[1] )
         wl_meas = (wl >= measured_bnds[0]) & (wl <= measured_bnds[1])
 
-        I_meas_sp2_all = (Idr+Idf)[wl_meas]  # all bands within the measured broad band
-        dwl_meas = dwl[wl_meas]
+        I_meas_sp2_all = (Idr+Idf)[wl_meas]  # spectral irradiances for all sub-bands within the measured broadband
+        dwl_meas = dwl[wl_meas]              # corresponding bandwidths
 
-        I_meas_sp2 = ( I_meas_sp2_all*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+        if measured_units == 'photons':
+            # convert SPCTRAL2 sub-band irradiances in W/m^2/um to broadband in photon flux units (photons/m^2/s)
+            I_meas_sp2 = ( I_meas_sp2_all*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+        elif measured_units == 'E':  # E units (W/m^2)
+            I_meas_sp2 = ( I_meas_sp2_all*dwl_meas ).sum()
+        else:
+            pass
 
-        cf = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
+
+        if measured_val:
+            cf = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
+        else:
+            cf = 1.0
 
         Idr2 = Idr * cf
         Idf2 = Idf * cf 
@@ -175,7 +236,12 @@ class model():
 
         I_meas_sp2_all_2 = (Idr2+Idf2)[wl_meas]
 
-        I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+        if measured_units == 'photons':
+            I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+        elif measured_units == 'E':
+            I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas ).sum()
+        else:
+            pass
 
         assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
 
@@ -191,7 +257,8 @@ class model():
 
 
         #> plot if desired
-        #if plot == True:
+        if plot == True:
+            pass
         
             
 def combine(casename='blah', time=[], info=''):

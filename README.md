@@ -1,9 +1,16 @@
 # pyspctral2
-Basic Python wrapper for functionality of the SPCTRAL2 atmospheric radiative transfer C code
+Basic Python wrapper for functionality of the SPCTRAL2 atmospheric radiative transfer C code.
+
+This is a single-file Python module, but the presence of the C_code in the expected place is required. 
+
+* Current version is a naive approach, requiring compiling the C code for every run.
+* Future version will include a Cython-based interface
+* or/and the code rewritten in Python
 
 ## SPCTRAL2
 
-The Bird Simple Spectral Model v2 ([SPCTRAL2](http://rredc.nrel.gov/solar/models/spectral/)) is a simple atmospheric radiative transfer model that predicts spectral irradiance at the surface.
+The Bird Simple Spectral Model v2 ([SPCTRAL2](http://rredc.nrel.gov/solar/models/spectral/)) 
+is a simple atmospheric radiative transfer model that predicts spectral irradiance at the surface.
 * 122 bands, in region 0.3&ndash;4.0 &mu;m, with higher spectral resolution in UV and Vis
 * Predicts diffuse light and direct solar beam
 * Processes modeled using semi-empirical exponential extinction:
@@ -11,11 +18,20 @@ The Bird Simple Spectral Model v2 ([SPCTRAL2](http://rredc.nrel.gov/solar/models
   * Water vapor
   * Refraction
 
+Default spectra (taken from the Excel version, all default settings):
+![SPCTRAL2 default spectrum](SPCTRAL2-default-spectrum.png)
+![SPCTRAL2 bands](SPCTRAL2-approx-bandwidths.png)
+
 ### Inputs
 
 Required
 * Location (lat, lon)
 * Date, time, UTC offset
-* Angle (tilt and aspect) of flat collector
+* Angle (tilt and aspect) of flat collector (presumably relative to the ground sfc)
+
+Optional
+* total column ozone
+* total column precipitable water
+* ...
 
 
