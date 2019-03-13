@@ -160,11 +160,12 @@ class model():
         1. Check for negative values and report ToD and PPFD
 
         2. Change negative values (unphysical) and unrealistically high values to 0
-        as well as nan's
+           as well as nan's
 
-        3. Correct total irradiance using a broadband measurement
-        e.g., PAR, total, Vis, UV, etc
-          
+        3. Correct total irradiance using a total (direct+diffuse) broadband measurement
+           e.g., PAR, total, Vis, UV, etc
+           Could do better job if we had separate direct and diffuse measurements...
+
         Parameters
         ----------
         measured_units : str
@@ -258,8 +259,12 @@ class model():
 
         #> plot if desired
         if plot == True:
-            pass
-        
+
+            plot_spectrum(casename=self.casename, ID=self.ID, output_type='corrected',
+                title='', title_left='', title_right='',
+                save=False)
+
+
             
 def combine(casename='blah', time=[], info=''):
     """
@@ -323,3 +328,54 @@ def combine(casename='blah', time=[], info=''):
 
 
 
+
+def plot_spectrum(casename='test', ID='001', output_type='raw',
+    title='', title_left='', title_right='',
+    save=False):
+    """Plot spectrum from an output CSV file, given the filename.
+
+
+    Returns
+    -------
+    pyplot figure handle
+    """
+    import matplotlib.pyplot as plt
+
+    ofpath = './out/{casename:s}/{output_type:s}/{ID:s}.csv'.format(\
+        casename=casename, output_type=output_type, ID=ID)
+    
+    if output_type == 'raw':
+        wl, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
+    elif output_type == 'corrected':
+        wl, dwl, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
+    else:
+        print('invalid output_type selection')  # should raise error instead...
+        return False
+
+    # dwl = np.diff(wl)
+    # dwl = np.append(dwl, dwl[-1])  # or np.nan
+
+    f1, a = plt.subplots(figsize=(8, 4))
+
+    a.plot(wl, Idr, label='direct')
+    a.plot(wl, Idf, label='diffuse')
+    a.plot(wl, Idr+Idf, label='total')
+    
+    a.set_xlim((0.3, 2.6))  # SPCTRAL2 limits
+
+    a.set_title(title)
+    a.set_title(title_left, loc='left')
+    a.set_title(title_right, loc='right')
+    a.set_xlabel('wavelength (μm)')
+    a.set_ylabel('spectral irradiance (W m$^{-2}$ μm$^{-1}$)')
+    
+    a.legend()
+    a.grid(True)
+    f1.tight_layout()
+
+    if save:
+        outdir = './out/{casename:s}/img'.format(casename=casename)
+        f1.savefig('{:s}/{:s}.png'.format(outdir, ID), dpi=150, 
+            transparent=False, bbox_inches='tight', pad_inches=0.05)
+
+    return f1

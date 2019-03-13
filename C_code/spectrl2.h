@@ -64,8 +64,8 @@ struct specdattype
 {
 	/***** ALPHABETICAL LIST OF COMMON VARIABLES *****/
 	                              /* Each comment begins with a 1-column letter code:
-	                                 I:  INPUT variable
-	                                 O:  OUTPUT variable
+*	                                 I:  INPUT variable
+*	                                 O:  OUTPUT variable */
 	/***** INTEGERS *****/
 
 	int   units;         /* I:  Output units:
@@ -82,7 +82,7 @@ struct specdattype
 	int   minute;		/* I:  Minute of hour, 0 - 59 */
 	int	  second;		/* I:  Second of minute, 0 - 59 */
 
-	/***** FLOATS *****/
+	/*---- FLOATS ----*/
 
 	float alpha;         /* I:  Power on Angstrom turbidity,
 	                                DEFAULT 1.14 */
@@ -110,7 +110,7 @@ struct specdattype
 	float temp; 		 /* I:  Ambient dry-bulb temperature, degrees C */
 	float watvap;        /* I:  Precipitable water vapor (cm) */
     
-        float zenref;  /* solar zenith angle */
+    float zenref;  /* solar zenith angle */
 };
 
 /*============================================================================

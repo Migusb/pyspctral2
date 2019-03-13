@@ -1,6 +1,6 @@
 /notes
 /C_code/tmp.*
-out/*
+*/out/*
 /old/*
 
 __pycache__/
