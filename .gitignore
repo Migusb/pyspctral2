@@ -1,8 +1,9 @@
 /notes
 /C_code/tmp.*
-/out/*
+out/*
 /old/*
 
 __pycache__/
 .vscode/
 .DS_Store
+.ipynb_checkpoints/
