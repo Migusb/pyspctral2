@@ -39,6 +39,11 @@ class model():
 
     Initialization parameters
     -----------------------------
+    lat, lon : float
+    year, month, day, hour, minute, second : int
+        local time!
+    utcoffset : int
+        UTC offset (negative for west)
     tau500 : float
         aerosol optical depth at 0.5 um (500 nm), base e
         set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
@@ -69,7 +74,8 @@ class model():
         utcoffset=-5.,
         temp=27, press=1010,
         tau500=0.27, watvap=1.42, ozone=-1.0, 
-        casename='test', ID='001'
+        casename='test', ID='001',
+        sza_check=None,
         ):
 
         self.lat = lat
@@ -91,6 +97,8 @@ class model():
         self.tau500 = tau500
         self.watvap = watvap
         self.ozone = ozone
+
+        self.sza_check = sza_check
 
         #> get ready for output
 
@@ -148,6 +156,29 @@ class model():
         cmd2 = '{c:s}/{xfname:s}'.format(xfname=xfname, c=C_code_path)
         with open(self.raw_ofname, 'w') as f:
             call(cmd2, stdout=f)
+
+        #> check sza (if check value provided)
+        #  first row in raw file is solar zenith angle
+        if self.sza_check:
+            with open(self.raw_ofname, 'r') as f:
+                sza_sp2 = float(f.readline().rstrip())
+            if abs(sza_sp2 - self.sza_check) > 0.1:  # should be very close
+                print('SZA issue:')
+                print('  sp2  : {:.3f}'.format(sza_sp2))
+                print('  check: {:.3f}'.format(self.sza_check))
+            else:
+                print('SZA matches check.')
+
+        # TODO: compare diffuse/direct ratio with Spitters method for PAR (at least)
+
+        # TODO: cloudiness correction (for low-level clouds, non-precip):
+        # - 2 spectral modifications from Bird et al. (1997)
+        # - also adjust watvap, 
+        #   to include effect of increased path length due to multiple scattering in cloud
+        # maybe 2 parameters, 
+        #   for cloud thickness and cloud fraction in the area
+        #   don't worry about cloud/hydrometeor types
+
 
         
 
@@ -272,6 +303,7 @@ def combine(casename='blah', time=[], info=''):
     into one netCDF file
 
     time: assumed list of datetime objs
+        used to timestamp the spectra
 
     Ultimately would like to have 
       coords: wl, time
@@ -296,7 +328,7 @@ def combine(casename='blah', time=[], info=''):
     sza = []
     for i in range(len(files_raw)):
         with open(files_raw[i], 'r') as f:
-            szai = f.readline().rstrip()
+            szai = float(f.readline().rstrip())
         sza.append(szai)
 
     #> build Idr and Idf arrays
