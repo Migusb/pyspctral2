@@ -16,8 +16,9 @@ is a simple atmospheric radiative transfer model that predicts spectral irradian
 * 122 bands, in region 0.3&ndash;4.0 &mu;m, with higher spectral resolution in UV and Vis
 * Predicts diffuse light and direct solar beam
 * Processes modeled using semi-empirical exponential extinction:
-  * Ozone
-  * Water vapor
+  * Ozone absorption
+  * Water vapor absorption and scattering
+  * Aerosol absorption
   * Refraction
 
 Default spectra (taken from the Excel version, all default settings):

@@ -76,6 +76,7 @@ class model():
         tau500=0.27, watvap=1.42, ozone=-1.0, 
         casename='test', ID='001',
         sza_check=None,
+        cc_correct=False, cc_p1=1.0, cc_p2=0.3,
         ):
 
         self.lat = lat
@@ -93,9 +94,18 @@ class model():
         self.temp = temp    # near-sfc air temp (deg. C)
         self.press = press  # near-sfc air pressure (mb)
 
+        self.cc_correct = cc_correct
+        self.cc_p1 = cc_p1
+        self.cc_p2 = cc_p2
+
         # ozone, water, etc
         self.tau500 = tau500
-        self.watvap = watvap
+        if self.cc_correct:
+            self.watvap = watvap * 1.2 * 1.2 * self.cc_p1
+            #^ climatologically higher watvap for cloudy conditions + 
+            #  increase in water vapor path due to multiple scattering within cloud
+        else:
+            self.watvap = watvap
         self.ozone = ozone
 
         self.sza_check = sza_check
@@ -169,22 +179,12 @@ class model():
             else:
                 print('SZA matches check.')
 
-        # TODO: compare diffuse/direct ratio with Spitters method for PAR (at least)
-
-        # TODO: cloudiness correction (for low-level clouds, non-precip):
-        # - 2 spectral modifications from Bird et al. (1997)
-        # - also adjust watvap, 
-        #   to include effect of increased path length due to multiple scattering in cloud
-        # maybe 2 parameters, 
-        #   for cloud thickness and cloud fraction in the area
-        #   don't worry about cloud/hydrometeor types
-
-
         
 
     def correct(self, 
         measured_units='E', measured_val=None, measured_bnds=(0.4, 0.7),
-        plot=False,
+        total_solar=None,
+        plot=False, save_plot=False,
         ):
         """Apply corrections to raw SPCTRAL2 outputs
 
@@ -205,24 +205,27 @@ class model():
             A measured broadband irradiance value (umol photons / m^2 / s)
         measured_bnds : tuple
             Wavelength band bounds for the measured irradiance value (um) 
+        total_solar : float
+            A measurement of total solar irradiance (direct+diffuse; W/m^2)
+            We can use this to correct the regions outside the measured band (e.g., PAR)
+            Only use this in addition to a measured band value!
 
 
         """
 
         #files = glob('{:s}/raw/*.csv'.format(self.outdir))
 
-
-        # first row in raw file is solar zenith angle
+        #> load raw data from the SPCTRAL2 run 
+        #  first row in raw file is NREL SPA computed solar zenith angle
         with open(self.raw_ofname, 'r') as f:
             sza = f.readline().rstrip()
         wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
 
-        #print sza
-
+        #> NaN -> 0
         Idr[np.isnan(Idr)] = 0.0
         Idf[np.isnan(Idf)] = 0.0
 
-        # correct for unrealistic and unphysical values
+        #> correct for unrealistic and unphysical values
         Idr[(Idr < 0) | (Idr > 2000)] = 0
         Idf[(Idf < 0) | (Idf > 2000)] = 0  # < pretty sure only diffuse have negative values in the SPCTRAL2 output
 
@@ -236,16 +239,60 @@ class model():
         #    print '    diffuse: {:d} vals lt 0'.format(Idf[dfl0].size)
         #    #print ','.join(np.char.mod('%.2e', diffuse[dfl0]))
 
-
-
+        #> calculate band widths
         dwl = np.diff(wl)
         dwl = np.append(dwl, dwl[-1])  # or np.nan
 
+        # TODO: compare diffuse/direct ratio with Spitters method for PAR (at least)
+
+        # TODO: cloudiness correction (for low-level clouds, non-precip):
+        # - 2 spectral modifications from Bird et al. (1997)
+        # - also adjust watvap, 
+        #   to include effect of increased path length due to multiple scattering in cloud
+        # maybe 2 parameters, 
+        #   for cloud thickness and cloud fraction in the area
+        #   don't worry about cloud/hydrometeor types
+
+        #> Bird et al. (1987) suggested cloud correction to diffuse spectrum
+        #  but adding a parameter to increase/decrease the magnitude of the changes
+        if self.cc_correct:
+            wl_cc_1 = wl <= 0.55
+            wl_cc_2 = (wl >= 0.50) & (wl <= 0.926)
+            cc_1 = (wl[wl_cc_1] + 0.45)**(-1.0)  # first correction to Idf
+            cc_2 = (1 + 0.07*3)                  # second correction
+            
+            # Bird et al. (1987) correction as is (only diffuse increased)
+            Idf[wl_cc_1] *= cc_1 
+            Idf[wl_cc_2] *= cc_2
+
+            # attempting an E-conserving version
+            # Idf[wl_cc_1] += Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1 #* 0.07/0.333
+            # Idf[wl_cc_2] += Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
+            # #Idr[wl_cc_1] *= 1/cc_1 
+            # #Idr[wl_cc_2] *= 1/cc_2
+            # Idr[wl_cc_1] -= Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1
+            # Idr[wl_cc_2] -= Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
+
+            # convert a fraction of direct to diffuse
+            # based on input fraction related to how much the Sun is obscured 
+            # i.e., transmissivity of the direct beam through cloud layer
+            Idf += Idr * (1-self.cc_p2)
+            Idr -= Idr * (1-self.cc_p2)
+            #^ for now at all wavelengths equally
+
+
+        #--------------------------------------------------------------------------------------------
+        #> normalize region(s) to match measured values 
+
         assert( len(measured_bnds) == 2 and measured_bnds[0] < measured_bnds[1] )
         wl_meas = (wl >= measured_bnds[0]) & (wl <= measured_bnds[1])
+        wl_meas_not = ~wl_meas
 
         I_meas_sp2_all = (Idr+Idf)[wl_meas]  # spectral irradiances for all sub-bands within the measured broadband
         dwl_meas = dwl[wl_meas]              # corresponding bandwidths
+
+        I_meas_not_sp2_all = (Idr+Idf)[wl_meas_not]
+        dwl_meas_not = dwl[wl_meas_not]
 
         if measured_units == 'photons':
             # convert SPCTRAL2 sub-band irradiances in W/m^2/um to broadband in photon flux units (photons/m^2/s)
@@ -253,11 +300,17 @@ class model():
         elif measured_units == 'E':  # E units (W/m^2)
             I_meas_sp2 = ( I_meas_sp2_all*dwl_meas ).sum()
         else:
-            pass
-
+            pass  # should raise error
+        I_meas_not_sp2 = ( I_meas_not_sp2_all*dwl_meas_not ).sum()
 
         if measured_val:
-            cf = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
+            cf_band = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
+            if total_solar:
+                cf = np.ones_like(wl)
+                cf[wl_meas] = cf_band
+                cf[wl_meas_not] = (total_solar-measured_val) / I_meas_not_sp2
+            else:
+                cf = cf_band
         else:
             cf = 1.0
 
@@ -265,35 +318,35 @@ class model():
         Idf2 = Idf * cf 
 
         #> recheck the broadband calculation with sp2 data to make sure correction worked
-
         I_meas_sp2_all_2 = (Idr2+Idf2)[wl_meas]
-
         if measured_units == 'photons':
             I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
         elif measured_units == 'E':
             I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas ).sum()
         else:
-            pass
-
+            pass  # should raise error
         assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
 
+        #> check total solar?
+        if total_solar:
+            total_solar_check = ( (Idr2+Idf2)*dwl ).sum()
+            assert( np.all(np.isclose(total_solar, total_solar_check)) )
+            print('total solar checks out.')
+        
+        #--------------------------------------------------------------------------------------------
 
         #> save corrected spectra
-        
         fnew = self.corrected_ofname
-
         a = np.vstack((wl, dwl, Idr2, Idf2)).T
         #print a.shape
         np.savetxt(fnew, a, delimiter=',',
             fmt=['%.3e', '%.3e', '%.6e', '%.6e'])
 
-
         #> plot if desired
         if plot == True:
-
             plot_spectrum(casename=self.casename, ID=self.ID, output_type='corrected',
                 title='', title_left='', title_right='',
-                save=False)
+                save=save_plot)
 
 
             
