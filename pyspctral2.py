@@ -217,8 +217,8 @@ class model():
 
         #> load raw data from the SPCTRAL2 run 
         #  first row in raw file is NREL SPA computed solar zenith angle
-        with open(self.raw_ofname, 'r') as f:
-            sza = f.readline().rstrip()
+#        with open(self.raw_ofname, 'r') as f:
+#            sza = f.readline().rstrip()
         wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
 
         #> NaN -> 0
@@ -306,7 +306,8 @@ class model():
         if measured_val:
             cf_band = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
             if total_solar:
-                cf = np.ones_like(wl)
+                #cf = np.ones_like(wl)
+                cf = np.ones(wl.shape)  # to please pylint
                 cf[wl_meas] = cf_band
                 cf[wl_meas_not] = (total_solar-measured_val) / I_meas_not_sp2
             else:
@@ -386,7 +387,8 @@ def combine(casename='blah', time=[], info=''):
 
     #> build Idr and Idf arrays
     Idr = np.zeros((nt, nwl))
-    Idf = np.zeros_like(Idr)
+    #Idf = np.zeros_like(Idr)
+    Idf = np.zeros(Idr.shape)  # to please pylint
     for i, f in enumerate(files_corrected):
         #print i, f
         wl, dwl, Idri, Idfi = np.loadtxt(f, delimiter=',', unpack=True)
@@ -432,7 +434,7 @@ def plot_spectrum(casename='test', ID='001', output_type='raw',
     if output_type == 'raw':
         wl, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
     elif output_type == 'corrected':
-        wl, dwl, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
+        wl, _, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
     else:
         print('invalid output_type selection')  # should raise error instead...
         return False
