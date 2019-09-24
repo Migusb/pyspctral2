@@ -326,7 +326,9 @@ class model():
             I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas ).sum()
         else:
             pass  # should raise error
-        assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
+
+        if measured_val:
+            assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
 
         #> check total solar?
         if total_solar:
