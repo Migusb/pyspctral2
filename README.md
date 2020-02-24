@@ -22,8 +22,8 @@ is a simple atmospheric radiative transfer model that predicts spectral irradian
   * Refraction
 
 Default spectra (taken from the Excel version, all default settings):
-<div align="center"><img src="img/SPCTRAL2-default-spectrum.png" width=400></div>
-<div align="center"><img src="img/SPCTRAL2-approx-bandwidths.png" width=400></div>
+<div align="center"><img src="img/SPCTRAL2-default-spectrum.png" width=550></div>
+<div align="center"><img src="img/SPCTRAL2-approx-bandwidths.png" width=550></div>
 
 ### Inputs
 
