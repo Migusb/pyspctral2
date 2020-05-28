@@ -5,4 +5,4 @@ __version__ = ""
 __license__ = "GPLv3"
 __email__ = "zlm1@psu.edu"
 
-from .pyspctral2 import model, plot_spectrum, combine
+from .pyspctral2 import model, plot_spectra, correct

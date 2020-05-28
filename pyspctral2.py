@@ -10,10 +10,10 @@ typical call sequence:
 """
 
 import datetime
-from glob import glob
+# from glob import glob
 import os
 #from pathlib2 import Path  # for py2 compatability
-from subprocess import call
+import subprocess
 
 import numpy as np
 import xarray as xr
@@ -157,7 +157,7 @@ def validate_within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(),
 
 
 
-def _recompile_run(sp2_inputs, model_options):
+def _recompile_run(sp2_inputs):
     """
     Use a modified version of the runner program 
     provided with the SPCTRAL2 C distribution (`spectest.c`).
@@ -167,7 +167,8 @@ def _recompile_run(sp2_inputs, model_options):
 
     PARAMETERS
     ----------
-    m : model object
+    sp2_inputs : dict
+        of the inputs to be used in the C code template
 
     RETURNS
     -------
@@ -176,12 +177,11 @@ def _recompile_run(sp2_inputs, model_options):
 
     """
 
-    # hack for now
-    # self = m
-
+    #
     #> create C code
+    #
     C_code = C_template.format(**sp2_inputs)
-    print(C_code)
+    # print(C_code)
 
     os.chdir(C_code_path)
 
@@ -189,7 +189,9 @@ def _recompile_run(sp2_inputs, model_options):
     with open(cfname, 'w') as f:
         f.writelines(C_code)
 
+    #
     #> compile C code
+    #
     # TODO: allow compiler choice as fn param
     
     # for now use gcc but check
@@ -206,27 +208,35 @@ def _recompile_run(sp2_inputs, model_options):
     # ^ I guess I was using a quite old gcc before (linking math was not required)
     # https://stackoverflow.com/a/5005419
 
-    call(cmd.split())
+    subprocess.run(cmd.split())
     os.chdir(cwd)
 
+    #
     #> run the C code
-    #  catching output in ofname
+    #> catching output in the file defined by raw_ofname
+    #
 
-    raw_ofname = "asdf.csv"
+    raw_ofname = "tmp.csv"
 
-    #cmd2 = './{xfname:s} > {ofname:s}'.format(xfname=xfname, ofname=ofname)
-    cmd2 = '{c:s}/{xfname:s}'.format(xfname=xfname, c=C_code_path)
-    with open(self.raw_ofname, 'w') as f:
-        call(cmd2, stdout=f)
+    # TODO: use tempfile from std lib to generate unique files to avoid possible conflict
 
-    #> load raw data from the SPCTRAL2 run 
-    #  first row in raw file is NREL SPA computed solar zenith angle
-    #  the rest of the rows are three cols: wavelength, direct, diffuse
-    with open(self.raw_ofname, 'r') as f:
+    cmd2 = f"{C_code_path:s}/{xfname:s}"
+    with open(raw_ofname, 'w') as f:
+        subprocess.run(cmd2, stdout=f)
+
+    #
+    #> load raw data from the SPCTRAL2 run
+    #> 
+    #> first row in raw file is NREL SPA computed solar zenith angle
+    #> the rest of the rows are three cols: wavelength, direct, diffuse
+    #
+    with open(raw_ofname, 'r') as f:
         sza = float(f.readline().rstrip())
-    wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
+    wl, Idr, Idf = np.loadtxt(raw_ofname, delimiter=',', skiprows=1, unpack=True)
 
-    return sza, wl, Idr, Idf
+    return {
+        "sza": sza, "wl": wl, "Idr": Idr, "Idf": Idf
+    }
 
 
 
@@ -308,7 +318,7 @@ class model():
         val_wri(lon, (-180, 180), name="lon")
 
         # validate date/time inputs by trying to make a datetime
-        dt = datetime.datetime(year, month, day, hour, minute, second)
+        self.dt = datetime.datetime(year, month, day, hour, minute, second)
         # TODO: could incorporate timezone info (with utcoffset)?
 
         # utcoffset
@@ -357,28 +367,32 @@ class model():
             for name in SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES
         }
         # ^ could be one expression, iterating over locals with an if
+        # TODO: separate validation from __init__ so safely change values and run again
 
 
         #> get ready for output
 
-        self.casename = casename  # group of runs
-        self.ID = ID  # identifier for one run of the group
-        dirbases = ['img', 'raw', 'corrected']
-        dirroot = './out/{:s}'.format(casename)
+        self._has_been_run = False
+        self._corrected = False
+
+        # self.casename = casename  # group of runs
+        # self.ID = ID  # identifier for one run of the group
+        # dirbases = ['img', 'raw', 'corrected']
+        # dirroot = './out/{:s}'.format(casename)
         
         # TODO: check if desired ID already exists in the out dir and give warning or error
         # TODO: instead of 'out', more descriptive name (like pyspctral2_out) 
         #       for output directory (needs to be changed multiple places)
 
-        self.outdir = dirroot
+        # self.outdir = dirroot
 
-        for dirbase in dirbases:
-            os.makedirs('{:s}/{:s}'.format(dirroot, dirbase), exist_ok=True)  # exist_ok only in py3 version
-            #ps = '{:s}/{:s}'.format(dirroot, dirbase)  # py2 exist_ok workaround using pathlib2
-            #Path(ps).mkdir(parents=True, exist_ok=True)
+        # for dirbase in dirbases:
+        #     os.makedirs('{:s}/{:s}'.format(dirroot, dirbase), exist_ok=True)  # exist_ok only in py3 version
+        #     #ps = '{:s}/{:s}'.format(dirroot, dirbase)  # py2 exist_ok workaround using pathlib2
+        #     #Path(ps).mkdir(parents=True, exist_ok=True)
 
-        self.raw_ofname = '{:s}/raw/{:s}.csv'.format(self.outdir, self.ID)
-        self.corrected_ofname = '{:s}/corrected/{:s}.csv'.format(self.outdir, self.ID)
+        # self.raw_ofname = '{:s}/raw/{:s}.csv'.format(self.outdir, self.ID)
+        # self.corrected_ofname = '{:s}/corrected/{:s}.csv'.format(self.outdir, self.ID)
         
 
 
@@ -394,13 +408,19 @@ class model():
         
         """
         
-        # run using selected runner
-        sza, wl, Idr, Idf = _recompile_run(**self.sp2_inputs)  # only this one is set up
+        if self._has_been_run:
+            raise Exception("Create a new model object to run again.")
 
+        # run using selected runner
+        out = _recompile_run(self.sp2_inputs)  # only this one is set up
+
+        self._has_been_run = True
 
         #> check sza (if check value provided)
         #  first row in raw file is solar zenith angle
         if sza_check is not None:
+
+            sza = out["sza"]
 
             assert isinstance(sza_check, float)
             # with open(self.raw_ofname, 'r') as f:
@@ -413,264 +433,76 @@ class model():
             else:
                 print('SZA matches check.')
 
+        #> create output xarray with the calculated values
+        #  (could be separate fn) 
         
+        # collect from the SPCTRAL2 output
+        wl = out["wl"]
+        Idr = out["Idr"]
+        Idf = out["Idf"]
+        sza = out["sza"]
 
-    def correct(self, 
-        measured_units='E', measured_val=None, measured_bnds=(0.4, 0.7),
-        total_solar=None,
-        plot=False, save_plot=False,
-        cc_correct=False, cc_p1=1.0, cc_p2=0.3,
-        ):
-        """Apply corrections to raw SPCTRAL2 outputs
+        time = self.dt  # datetime
+        sdt = self.dt.strftime('%Y-%m-%d %H:%M:%S')
 
-        1. Check for negative values and report ToD and PPFD
+        # dwl should defined at wlc (wavelength band centers)
 
-        2. Change negative values (unphysical) and unrealistically high values to 0
-           as well as nan's
-
-        3. Correct total irradiance using a total (direct+diffuse) broadband measurement
-           e.g., PAR, total, Vis, UV, etc
-           Could do better job if we had separate direct and diffuse measurements...
-
-        Parameters
-        ----------
-        measured_units : str
-            'E' (W/m^2) or 'photons' (photon flux density)
-        measured_val : float
-            A measured broadband irradiance value (umol photons / m^2 / s)
-        measured_bnds : tuple
-            Wavelength band bounds for the measured irradiance value (um) 
-        total_solar : float
-            A measurement of total solar irradiance (direct+diffuse; W/m^2)
-            We can use this to correct the regions outside the measured band (e.g., PAR)
-            Only use this in addition to a measured band value!
-        cc_correct : bool
-            Whether to apply the (experimental) cloud corrections
-        cc_p1 : float
-            Bird et al. (1987) cloud-correction parameter 1
-            for wavelengths in range <= 0.55 um
-        cc_p1 : float
-            Bird et al. (1987) cloud-correction parameter 2
-            for wavelengths in range 0.5--0.926 um
-
-        """
-        # TODO: move cloud correction to separate fn (can still pass kwargs to it from this one)
-        # TODO: cloud correction fn should optionally run with the watvap enhancement previously in __init__:
-        # if self.cc_correct:
-        #     self.watvap = watvap * 1.2 * 1.2 * self.cc_p1
-        #     #^ climatologically higher watvap for cloudy conditions + 
-        #     #  increase in water vapor path due to multiple scattering within cloud
-
-        #files = glob('{:s}/raw/*.csv'.format(self.outdir))
-
-        #> load raw data from the SPCTRAL2 run 
-        #  first row in raw file is NREL SPA computed solar zenith angle
-#        with open(self.raw_ofname, 'r') as f:
-#            sza = f.readline().rstrip()
-        wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
-
-        #> NaN -> 0
-        Idr[np.isnan(Idr)] = 0.0
-        Idf[np.isnan(Idf)] = 0.0
-
-        #> correct for unrealistic and unphysical values
-        Idr[(Idr < 0) | (Idr > 2000)] = 0
-        Idf[(Idf < 0) | (Idf > 2000)] = 0  # < pretty sure only diffuse have negative values in the SPCTRAL2 output
-
-        #drl0 = Idr < 0
-        #dfl0 = Idf < 0
-        #if np.any(drl0) or np.any(dfl0):
-        #    print 'neg. values found. i = {:d}'.format(i)
-        #    print '  stime = {:s}, PPFD = {:.1e}'.format(env_data[i][1], env_data[i][4])
-        #    print '    direct: {:d} vals lt 0'.format(Idr[drl0].size)
-        #    #print ','.join(np.char.mod('%.2e', direct[drl0]))
-        #    print '    diffuse: {:d} vals lt 0'.format(Idf[dfl0].size)
-        #    #print ','.join(np.char.mod('%.2e', diffuse[dfl0]))
-
-        #> calculate band widths
-        dwl = np.diff(wl)
-        dwl = np.append(dwl, dwl[-1])  # or np.nan
-
-        # TODO: compare diffuse/direct ratio with Spitters method for PAR (at least)
-
-        # TODO: cloudiness correction (for low-level clouds, non-precip):
-        # - 2 spectral modifications from Bird et al. (1997)
-        # - also adjust watvap, 
-        #   to include effect of increased path length due to multiple scattering in cloud
-        # maybe 2 parameters, 
-        #   for cloud thickness and cloud fraction in the area
-        #   don't worry about cloud/hydrometeor types
-
-        #> Bird et al. (1987) suggested cloud correction to diffuse spectrum
-        #  but adding a parameter to increase/decrease the magnitude of the changes
-        if cc_correct:
-            wl_cc_1 = wl <= 0.55
-            wl_cc_2 = (wl >= 0.50) & (wl <= 0.926)
-            cc_1 = (wl[wl_cc_1] + 0.45)**(-1.0)  # first correction to Idf
-            cc_2 = (1 + 0.07*3)                  # second correction
-            
-            # Bird et al. (1987) correction as is (only diffuse increased)
-            Idf[wl_cc_1] *= cc_1 
-            Idf[wl_cc_2] *= cc_2
-
-            # attempting an E-conserving version
-            # Idf[wl_cc_1] += Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1 #* 0.07/0.333
-            # Idf[wl_cc_2] += Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
-            # #Idr[wl_cc_1] *= 1/cc_1 
-            # #Idr[wl_cc_2] *= 1/cc_2
-            # Idr[wl_cc_1] -= Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1
-            # Idr[wl_cc_2] -= Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
-
-            # convert a fraction of direct to diffuse
-            # based on input fraction related to how much the Sun is obscured 
-            # i.e., transmissivity of the direct beam through cloud layer
-            Idf += Idr * (1-cc_p2)
-            Idr -= Idr * (1-cc_p2)
-            #^ for now at all wavelengths equally
-
-
-        #--------------------------------------------------------------------------------------------
-        #> normalize region(s) to match measured values 
-
-        assert( len(measured_bnds) == 2 and measured_bnds[0] < measured_bnds[1] )
-        wl_meas = (wl >= measured_bnds[0]) & (wl <= measured_bnds[1])
-        wl_meas_not = ~wl_meas
-
-        I_meas_sp2_all = (Idr+Idf)[wl_meas]  # spectral irradiances for all sub-bands within the measured broadband
-        dwl_meas = dwl[wl_meas]              # corresponding bandwidths
-
-        I_meas_not_sp2_all = (Idr+Idf)[wl_meas_not]
-        dwl_meas_not = dwl[wl_meas_not]
-
-        if measured_units == 'photons':
-            # convert SPCTRAL2 sub-band irradiances in W/m^2/um to broadband in photon flux units (photons/m^2/s)
-            I_meas_sp2 = ( I_meas_sp2_all*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
-        elif measured_units == 'E':  # E units (W/m^2)
-            I_meas_sp2 = ( I_meas_sp2_all*dwl_meas ).sum()
-        else:
-            pass  # should raise error
-        I_meas_not_sp2 = ( I_meas_not_sp2_all*dwl_meas_not ).sum()
-
-        if measured_val:
-            cf_band = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
-            if total_solar:
-                #cf = np.ones_like(wl)
-                cf = np.ones(wl.shape)  # to please pylint
-                cf[wl_meas] = cf_band
-                cf[wl_meas_not] = (total_solar-measured_val) / I_meas_not_sp2
-            else:
-                cf = cf_band
-        else:
-            cf = 1.0
-
-        Idr2 = Idr * cf
-        Idf2 = Idf * cf 
-
-        #> recheck the broadband calculation with sp2 data to make sure correction worked
-        I_meas_sp2_all_2 = (Idr2+Idf2)[wl_meas]
-        if measured_units == 'photons':
-            I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
-        elif measured_units == 'E':
-            I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas ).sum()
-        else:
-            pass  # should raise error
-
-        if measured_val:
-            assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
-
-        #> check total solar?
-        if total_solar:
-            total_solar_check = ( (Idr2+Idf2)*dwl ).sum()
-            assert( np.all(np.isclose(total_solar, total_solar_check)) )
-            print('total solar checks out.')
-        
-        #--------------------------------------------------------------------------------------------
-
-        #> save corrected spectra
-        fnew = self.corrected_ofname
-        a = np.vstack((wl, dwl, Idr2, Idf2)).T
-        #print a.shape
-        np.savetxt(fnew, a, delimiter=',',
-            fmt=['%.3e', '%.3e', '%.6e', '%.6e'])
-
-        #> plot if desired
-        if plot == True:
-            plot_spectrum(casename=self.casename, ID=self.ID, output_type='corrected',
-                title='', title_left='', title_right='',
-                save=save_plot)
-
-
-            
-def combine(casename='blah', time=[], info=''):
-    """
-    For given casename, combine all of the individual output files and data
-    into one netCDF file
-
-    time: assumed list of datetime objs
-        used to timestamp the spectra
-
-    Ultimately would like to have 
-      coords: wl, time
-      vars: dwl, Idr, Idf, sdatetime, T, p, ozone, watvap, tau500
-    """
-
-    #> get lists of files and sort
-    files_raw = glob('./out/{:s}/raw/*.csv'.format(casename))
-    files_corrected = glob('./out/{:s}/corrected/*.csv'.format(casename))
-    files_raw.sort()
-    files_corrected.sort()
-
-    assert( len(files_raw) == len(time) and len(files_raw) == len(files_corrected) )
-    nt = len(time)
-    nwl = 122
-
-    #> time variables
-    sdt = [dtx.strftime('%Y-%m-%d %H:%M:%S') for dtx in time]
-
-    #> get sza from 1st line of the raw files
-    #  SPCTRAL2 calculates it using the NREL SPA
-    sza = []
-    for i in range(len(files_raw)):
-        with open(files_raw[i], 'r') as f:
-            szai = float(f.readline().rstrip())
-        sza.append(szai)
-
-    #> build Idr and Idf arrays
-    Idr = np.zeros((nt, nwl))
-    #Idf = np.zeros_like(Idr)
-    Idf = np.zeros(Idr.shape)  # to please pylint
-    for i, f in enumerate(files_corrected):
-        #print i, f
-        wl, dwl, Idri, Idfi = np.loadtxt(f, delimiter=',', unpack=True)
-        Idr[i,:] = Idri
-        Idf[i,:] = Idfi    
-
-    #> create dataset
-    dset = xr.Dataset(\
-        coords={'wl': ('wl', wl, {'units': micron, 'longname': 'wavelength'}), 
-                'time': time}, 
-        data_vars={\
-            'Idr': (['time', 'wl'], Idr, {'units': 'W m^-2 um^-1', 'longname': 'direct beam solar irradiance'}),
-            'Idf': (['time', 'wl'], Idf, {'units': 'W m^-2 um^-1', 'longname': 'diffuse solar irradiance'}),
-            'dwl': ('wl', dwl, {'units': 'um', 'longname': 'wavelength band width'}),
-            'sdt': ('time', sdt, {'longname': 'datetime string'}),
-            'sza': ('time', sza, {'units': 'deg.', 'longname': 'solar zenith angle'}),
+        # we want it to be easily concat-able (in case running for multiple times)
+        # so using a time coordinate variable (with one value)
+        # we have to modify the arrays to support this (adding dim)
+        # -> may undo this at some point
+        dset = xr.Dataset(
+            coords={'wl': ('wl', wl, {'units': micron, 'long_name': 'wavelength'}), 
+                    'time': np.atleast_1d(time)}, 
+            data_vars={
+                'Idr': (
+                    ('time', 'wl'), Idr[np.newaxis, :], 
+                    {'units': f'W m^-2 {micron}^-1', 'long_name': 'direct beam solar irradiance'}
+                ),
+                'Idf': (
+                    ('time', 'wl'), Idf[np.newaxis, :], 
+                    {'units': f'W m^-2 {micron}^-1', 'long_name': 'diffuse solar irradiance'}
+                ),
+                'sdt': ('time', np.atleast_1d(sdt), {'long_name': 'datetime string'}),
+                'sza': ('time', np.atleast_1d(sza), {'units': 'deg.', 'long_name': 'solar zenith angle'}),
             },
-        attrs={'casename': casename, 'info': info},
+            attrs={
+                "sp2_inputs": self.sp2_inputs
+            },
         )
 
-    #> save dataset
-    ofname = './out/{:s}.nc'.format(casename)
-    dset.to_netcdf(ofname)
+        #> return and store (probably only need to do one)
+        self._out_raw = dset
+        self.out = self._out_raw  # until correction happens?
+        # return dset
+
+        # to enable the chain `model().run().out` to get a dset
+        return self
+
+
+    def plot(self):
+        """Plot the output spectra."""
+        
+        if not self._has_been_run:
+            raise Exception("Gotta run the model before plotting the results.")
+
+        plot_spectra(self.out, save=False)
 
 
 
-
-def plot_spectrum(casename='test', ID='001', output_type='raw',
+def plot_spectra(dset, *,
     title='', title_left='', title_right='',
     save=False):
     """Plot spectrum from an output CSV file, given the filename.
 
+    Parameters
+    ----------
+    dset : xr.Dataset
+        the model output, stored in attribute `model.out`
+    title, title_left, title_right : str
+        additional info to be added to plot
+    save : bool or str, optional
+        can use to supply the figure save path (without extension)
 
     Returns
     -------
@@ -678,19 +510,9 @@ def plot_spectrum(casename='test', ID='001', output_type='raw',
     """
     import matplotlib.pyplot as plt
 
-    ofpath = './out/{casename:s}/{output_type:s}/{ID:s}.csv'.format(\
-        casename=casename, output_type=output_type, ID=ID)
-    
-    if output_type == 'raw':
-        wl, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
-    elif output_type == 'corrected':
-        wl, _, Idr, Idf = np.loadtxt(ofpath, delimiter=',', skiprows=1, unpack=True)
-    else:
-        print('invalid output_type selection')  # should raise error instead...
-        return False
-
-    # dwl = np.diff(wl)
-    # dwl = np.append(dwl, dwl[-1])  # or np.nan
+    wl = dset.wl
+    Idr = dset.Idr.squeeze()
+    Idf = dset.Idf.squeeze()
 
     f1, a = plt.subplots(figsize=(8, 4))
 
@@ -698,7 +520,8 @@ def plot_spectrum(casename='test', ID='001', output_type='raw',
     a.plot(wl, Idf, label='diffuse')
     a.plot(wl, Idr+Idf, label='total')
     
-    a.set_xlim((0.3, 2.6))  # SPCTRAL2 limits
+    # note: SPCTRAL2 limits are [0.3, 4.0]
+    a.set_xlim((0.3, 2.6))  
 
     a.set_title(title)
     a.set_title(title_left, loc='left')
@@ -711,8 +534,209 @@ def plot_spectrum(casename='test', ID='001', output_type='raw',
     f1.tight_layout()
 
     if save:
-        outdir = './out/{casename:s}/img'.format(casename=casename)
-        f1.savefig('{:s}/{:s}.png'.format(outdir, ID), dpi=150, 
-            transparent=False, bbox_inches='tight', pad_inches=0.05)
+        raise NotImplementedError
+
+        # if isinstance(save, str):
+        #     try:
+        #         p = Path(save)
+        #     except:
+
+        # outdir = './out/{casename:s}/img'.format(casename=casename)
+        # f1.savefig('{:s}/{:s}.png'.format(outdir, ID), dpi=150, 
+        #     transparent=False, bbox_inches='tight', pad_inches=0.05)
 
     return f1
+
+
+
+def correct(dset, 
+    measured_units='E', measured_val=None, measured_bnds=(0.4, 0.7),
+    total_solar=None,
+    plot=False, save_plot=False,
+    cc_correct=False, cc_p1=1.0, cc_p2=0.3,
+    ):
+    """Apply corrections to raw SPCTRAL2 outputs
+
+    1. Check for negative values and report ToD and PPFD
+
+    2. Change negative values (unphysical) and unrealistically high values to 0
+        as well as nan's
+
+    3. Correct total irradiance using a total (direct+diffuse) broadband measurement
+        e.g., PAR, total, Vis, UV, etc
+        Could do better job if we had separate direct and diffuse measurements...
+
+    Parameters
+    ----------
+    dset : xr.Dataset
+
+    measured_units : str
+        'E' (W/m^2) or 'photons' (photon flux density)
+    measured_val : float
+        A measured broadband irradiance value (umol photons / m^2 / s)
+    measured_bnds : tuple
+        Wavelength band bounds for the measured irradiance value (um) 
+    total_solar : float
+        A measurement of total solar irradiance (direct+diffuse; W/m^2)
+        We can use this to correct the regions outside the measured band (e.g., PAR)
+        Only use this in addition to a measured band value!
+    cc_correct : bool
+        Whether to apply the (experimental) cloud corrections
+    cc_p1 : float
+        Bird et al. (1987) cloud-correction parameter 1
+        for wavelengths in range <= 0.55 um
+    cc_p1 : float
+        Bird et al. (1987) cloud-correction parameter 2
+        for wavelengths in range 0.5--0.926 um
+
+    """
+    # TODO: move cloud correction to separate fn (can still pass kwargs to it from this one)
+    # TODO: cloud correction fn should optionally run with the watvap enhancement previously in __init__:
+    # if self.cc_correct:
+    #     self.watvap = watvap * 1.2 * 1.2 * self.cc_p1
+    #     #^ climatologically higher watvap for cloudy conditions + 
+    #     #  increase in water vapor path due to multiple scattering within cloud
+
+    #files = glob('{:s}/raw/*.csv'.format(self.outdir))
+
+    #> load raw data from the SPCTRAL2 run 
+    #  first row in raw file is NREL SPA computed solar zenith angle
+#        with open(self.raw_ofname, 'r') as f:
+#            sza = f.readline().rstrip()
+    # wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
+
+    wl = dset.wl
+    Idr = dset.Idr.squeeze()
+    Idf = dset.Idf.squeeze()
+
+    #> NaN -> 0
+    # TODO: check if this is really necessary
+    Idr[np.isnan(Idr)] = 0.0
+    Idf[np.isnan(Idf)] = 0.0
+
+    #> correct for unrealistic and unphysical values
+    Idr[(Idr < 0) | (Idr > 2000)] = 0
+    Idf[(Idf < 0) | (Idf > 2000)] = 0  # < pretty sure only diffuse have negative values in the SPCTRAL2 output
+
+    #drl0 = Idr < 0
+    #dfl0 = Idf < 0
+    #if np.any(drl0) or np.any(dfl0):
+    #    print 'neg. values found. i = {:d}'.format(i)
+    #    print '  stime = {:s}, PPFD = {:.1e}'.format(env_data[i][1], env_data[i][4])
+    #    print '    direct: {:d} vals lt 0'.format(Idr[drl0].size)
+    #    #print ','.join(np.char.mod('%.2e', direct[drl0]))
+    #    print '    diffuse: {:d} vals lt 0'.format(Idf[dfl0].size)
+    #    #print ','.join(np.char.mod('%.2e', diffuse[dfl0]))
+
+    #> calculate band widths
+    dwl = np.diff(wl)
+    dwl = np.append(dwl, dwl[-1])  # or np.nan
+
+    # TODO: compare diffuse/direct ratio with Spitters method for PAR (at least)
+
+    # TODO: cloudiness correction (for low-level clouds, non-precip):
+    # - 2 spectral modifications from Bird et al. (1997)
+    # - also adjust watvap, 
+    #   to include effect of increased path length due to multiple scattering in cloud
+    # maybe 2 parameters, 
+    #   for cloud thickness and cloud fraction in the area
+    #   don't worry about cloud/hydrometeor types
+
+    #> Bird et al. (1987) suggested cloud correction to diffuse spectrum
+    #  but adding a parameter to increase/decrease the magnitude of the changes
+    if cc_correct:
+        wl_cc_1 = wl <= 0.55
+        wl_cc_2 = (wl >= 0.50) & (wl <= 0.926)
+        cc_1 = (wl[wl_cc_1] + 0.45)**(-1.0)  # first correction to Idf
+        cc_2 = (1 + 0.07*3)                  # second correction
+        
+        # Bird et al. (1987) correction as is (only diffuse increased)
+        Idf[wl_cc_1] *= cc_1 
+        Idf[wl_cc_2] *= cc_2
+
+        # attempting an E-conserving version
+        # Idf[wl_cc_1] += Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1 #* 0.07/0.333
+        # Idf[wl_cc_2] += Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
+        # #Idr[wl_cc_1] *= 1/cc_1 
+        # #Idr[wl_cc_2] *= 1/cc_2
+        # Idr[wl_cc_1] -= Idr[wl_cc_1] * (1-1/cc_1) * self.cc_p1
+        # Idr[wl_cc_2] -= Idr[wl_cc_2] * (1-1/cc_2) * self.cc_p1
+
+        # convert a fraction of direct to diffuse
+        # based on input fraction related to how much the Sun is obscured 
+        # i.e., transmissivity of the direct beam through cloud layer
+        Idf += Idr * (1-cc_p2)
+        Idr -= Idr * (1-cc_p2)
+        #^ for now at all wavelengths equally
+
+
+    #--------------------------------------------------------------------------------------------
+    #> normalize region(s) to match measured values 
+
+    assert( len(measured_bnds) == 2 and measured_bnds[0] < measured_bnds[1] )
+    wl_meas = (wl >= measured_bnds[0]) & (wl <= measured_bnds[1])
+    wl_meas_not = ~wl_meas
+
+    I_meas_sp2_all = (Idr+Idf)[wl_meas]  # spectral irradiances for all sub-bands within the measured broadband
+    dwl_meas = dwl[wl_meas]              # corresponding bandwidths
+
+    I_meas_not_sp2_all = (Idr+Idf)[wl_meas_not]
+    dwl_meas_not = dwl[wl_meas_not]
+
+    if measured_units == 'photons':
+        # convert SPCTRAL2 sub-band irradiances in W/m^2/um to broadband in photon flux units (photons/m^2/s)
+        I_meas_sp2 = ( I_meas_sp2_all*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+    elif measured_units == 'E':  # E units (W/m^2)
+        I_meas_sp2 = ( I_meas_sp2_all*dwl_meas ).sum()
+    else:
+        pass  # should raise error
+    I_meas_not_sp2 = ( I_meas_not_sp2_all*dwl_meas_not ).sum()
+
+    if measured_val:
+        cf_band = measured_val / I_meas_sp2  # correction factor using measured broadband irradiance value
+        if total_solar:
+            #cf = np.ones_like(wl)
+            cf = np.ones(wl.shape)  # to please pylint
+            cf[wl_meas] = cf_band
+            cf[wl_meas_not] = (total_solar-measured_val) / I_meas_not_sp2
+        else:
+            cf = cf_band
+    else:
+        cf = 1.0
+
+    Idr2 = Idr * cf
+    Idf2 = Idf * cf 
+
+    #> recheck the broadband calculation with sp2 data to make sure correction worked
+    I_meas_sp2_all_2 = (Idr2+Idf2)[wl_meas]
+    if measured_units == 'photons':
+        I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
+    elif measured_units == 'E':
+        I_meas_sp2_2 = ( I_meas_sp2_all_2*dwl_meas ).sum()
+    else:
+        pass  # should raise error
+
+    if measured_val:
+        assert( np.all(np.isclose(I_meas_sp2_2, measured_val)) )
+
+    #> check total solar?
+    if total_solar:
+        total_solar_check = ( (Idr2+Idf2)*dwl ).sum()
+        assert( np.all(np.isclose(total_solar, total_solar_check)) )
+        print('total solar checks out.')
+    
+    #--------------------------------------------------------------------------------------------
+
+    # #> save corrected spectra
+    # fnew = self.corrected_ofname
+    # a = np.vstack((wl, dwl, Idr2, Idf2)).T
+    # #print a.shape
+    # np.savetxt(fnew, a, delimiter=',',
+    #     fmt=['%.3e', '%.3e', '%.6e', '%.6e'])
+
+    # #> plot if desired
+    # if plot == True:
+    #     plot_spectrum(casename=self.casename, ID=self.ID, output_type='corrected',
+    #         title='', title_left='', title_right='',
+    #         save=save_plot)
+
