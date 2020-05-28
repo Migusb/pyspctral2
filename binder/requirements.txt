@@ -1,0 +1,5 @@
+numpy
+netcdf4
+xarray
+matplotlib
+jupytext

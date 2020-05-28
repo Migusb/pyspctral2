@@ -2,6 +2,8 @@
 /C_code/tmp.*
 */out/*
 /old/*
+/examples/pyspctral2
+/examples/*.ipynb
 
 __pycache__/
 .vscode/
