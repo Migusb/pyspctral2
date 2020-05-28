@@ -72,6 +72,91 @@ def _is_tool(name):
     return which(name) is not None
 
 
+def _within_range_check(value, bounds, *, mode="hard", name=""):
+    # based on xarray-simlab's xsimlab.validators.in_bounds
+    # see: https://github.com/benbovy/xarray-simlab/blob/master/xsimlab/validators.py
+    # ^ could expand this one to work for np arrays too
+
+    delim_left  = "["
+    delim_right = "]"
+    bounds_str = f"{delim_left}{bounds[0]}, {bounds[1]}{delim_right}"
+
+    if (
+        bounds[0] is not None
+        and bounds[1] is not None
+        and bounds[1] < bounds[0]
+    ):
+        raise ValueError(
+            f"Invalid bounds {bounds_str}: "
+            "Upper limit should be higher than lower limit."
+        )
+
+    out_lower = bounds[0] is not None and value <= bounds[0]
+
+    out_upper = bounds[1] is not None and value >= bounds[1]
+
+    if out_lower or out_upper:
+        if name:
+            msg_name = f" for variable `{name}`"
+        else:
+            msg_name = ""
+
+        msg = f"Value {value} is out of bounds {bounds_str}{msg_name}"
+
+        if mode == "hard":
+            raise ValueError(msg)
+        elif mode == "soft":
+            print(f"Warning: {msg}")
+        else:
+            raise ValueError(f"`mode` {mode!r} is invalid.")
+
+
+
+def within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(), *, name=""):
+    """Check if value `x` is within the bounds. 
+
+    Bounds passed to `hard_bounds` raise an error; 
+    those passed to `soft_bounds` a warning. 
+
+    x : float
+        value to check is within the bounds
+    hard : 2-tuple, items can be float, int, or None
+        raise ValueError if this one is not met
+        default = unbounded (None, None)
+    soft : 2-tuple, items can be float, int, or None; optional
+        warning message instead of raising error
+        should be a subset of the hard bounds (not extend outside)
+
+    name : str, optional
+        variable name to use in the outside-bounds message
+    """
+        
+    # validate inputs
+    def validate_bounds(bounds):
+        NoneType = type(None)
+
+        ok = (
+            len(bounds) == 2 
+            and all(isinstance(x, (float, int, NoneType)) for x in bounds)
+        )
+        if not ok:
+            raise ValueError(
+                f"{bounds!r} is an invalid bounds specification."
+            )
+
+    # check hard bounds
+    validate_bounds(hard_bounds)
+    _within_range_check(x, hard_bounds, mode="hard", name=name)
+
+    # check soft bounds (optional)
+    if soft_bounds:
+        validate_bounds(soft_bounds)
+        _within_range_check(x, soft_bounds, mode="soft", name=name)
+
+
+
+
+
 def _recompile_run(m):
     """
     Use a modified version of the runner program 
