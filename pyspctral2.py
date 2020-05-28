@@ -37,8 +37,16 @@ SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES = [
     "utcoffset",
     "temp", "press",
     "tau500", "watvap", "ozone",
-    "tilt", "aspect",
+    # "tilt", "aspect",  # < currently these values are hardcoded in the runners
 ]
+
+
+# lat=40.0, lon=-105.0, 
+# year=2014, month=7, day=1,
+# hour=12, minute=0, second=0,
+# utcoffset=-5.,
+# temp=27, press=1010,
+# tau500=0.27, watvap=1.42, ozone=-1.0, 
 
 
 # just to see if it will run or not... (not for correctness)
@@ -150,44 +158,67 @@ class model():
     so we compile every time (not very efficient...)
     but luckily it takes very little time to run. 
 
+    Note: the init arguments are set as keyword-only and so can be passed in any order, 
+    and any selection of them can be used. 
+
     Initialization parameters
-    -----------------------------
-    lat, lon : float
-    year, month, day, hour, minute, second : int
-        local time!
-    utcoffset : int
+    -------------------------
+    lat, lon
+        location (deg.)
+    year, month, day, hour, minute, second
+        local time! (integers only)
+    utcoffset
         UTC offset (negative for west)
-    tau500 : float
+    temp
+        ambient temperature (deg. C)
+    press
+        pressure (surface pressure at the location) (mb/hPa)
+    tau500
         aerosol optical depth at 0.5 um (500 nm), base e
         set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
         default value (from original C example run script) = 0.2, from Excel version = 0.27 (midrange)
-        typical range [0.05, 0.55] for clear sky
-    watvap : float
+        typical range: [0.05, 0.55] for clear sky
+    watvap
         column precipitable water vapor (cm)
         set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
         default value (from original C example run script) = 1.36, from Excel version = 1.42
-        typical range [0.3, 6]
-    ozone : float
+        typical range: [0.3, 6]
+    ozone
         total column ozone (cm)
         set to -1.0 for an internal (SPCTRAL2) estimation based on lat/lon and time of day/year (Heuklon 1978)
         default value (from original C example run script) = -1.0
-    casename : str
+
+    casename
         name of the case, used to create a directory for saving the outputs
         default = 'test'
-    ID : str
+    ID
         identifier used for the saved output filename
         default = '001'
 
     """
 
-    def __init__(self, 
-        lat=40.0, lon=-105.0, 
-        year=2014, month=7, day=1,
-        hour=12, minute=0, second=0,
-        utcoffset=-5.,
-        temp=27, press=1010,
-        tau500=0.27, watvap=1.42, ozone=-1.0, 
-        casename='test', ID='001',
+    def __init__(self, *, 
+        lat: float = 40.0, 
+        lon: float = -105.0, 
+        year: int = 2014, 
+        month: int = 7, 
+        day: int = 1,
+        hour: int = 12, 
+        minute: int = 0, 
+        second: int = 0,
+        utcoffset: int = -5.,
+        #
+        temp: float = 27.0, 
+        press: float = 1010.0,
+        #
+        tau500: float = 0.27, 
+        watvap: float = 1.42, 
+        ozone: float = -1.0, 
+        #
+        casename: str = 'test', 
+        ID: str = '001',
+        #
+        **kwargs,
         ):
 
         self.lat = lat
