@@ -9,7 +9,7 @@ typical call sequence:
 
 """
 
-import datetime as dt
+import datetime
 from glob import glob
 import os
 #from pathlib2 import Path  # for py2 compatability
@@ -112,7 +112,7 @@ def _within_range_check(value, bounds, *, mode="hard", name=""):
 
 
 
-def within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(), *, name=""):
+def validate_within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(), *, name=""):
     """Check if value `x` is within the bounds. 
 
     Bounds passed to `hard_bounds` raise an error; 
@@ -157,7 +157,7 @@ def within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(), *, name=
 
 
 
-def _recompile_run(m):
+def _recompile_run(sp2_inputs, model_options):
     """
     Use a modified version of the runner program 
     provided with the SPCTRAL2 C distribution (`spectest.c`).
@@ -177,17 +177,11 @@ def _recompile_run(m):
     """
 
     # hack for now
-    self = m
+    # self = m
 
     #> create C code
-    C_code = C_template.format(lon=self.lon, lat=self.lat,
-        year=self.year, month=self.month, day=self.day,
-        hour=self.hour, minute=self.minute, second=self.second,
-        utcoffset=self.utcoffset,
-        temp=self.temp, press=self.press, 
-        tau500=self.tau500, watvap=self.watvap, ozone=self.ozone,
-        )
-    #print C_code
+    C_code = C_template.format(**sp2_inputs)
+    print(C_code)
 
     os.chdir(C_code_path)
 
@@ -208,9 +202,7 @@ def _recompile_run(m):
     # ref: https://stackoverflow.com/a/11210185
     
     xfname = 'tmp.out'
-    #cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
-    #cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
-    cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s} -lm'.format(cfname=cfname, xfname=xfname) 
+    cmd = f"gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s} -lm"
     # ^ I guess I was using a quite old gcc before (linking math was not required)
     # https://stackoverflow.com/a/5005419
 
@@ -219,6 +211,8 @@ def _recompile_run(m):
 
     #> run the C code
     #  catching output in ofname
+
+    raw_ofname = "asdf.csv"
 
     #cmd2 = './{xfname:s} > {ofname:s}'.format(xfname=xfname, ofname=ofname)
     cmd2 = '{c:s}/{xfname:s}'.format(xfname=xfname, c=C_code_path)
@@ -250,6 +244,7 @@ class model():
     -------------------------
     lat, lon
         location (deg.)
+        lon as within [-180, 180]
     year, month, day, hour, minute, second
         local time! (integers only)
     utcoffset
@@ -306,26 +301,63 @@ class model():
         **kwargs,
         ):
 
-        self.lat = lat
-        self.lon = lon
+        val_wri = validate_within_range_inclusive  # alias
 
-        self.year = year
-        self.month = month
-        self.day = day
-        self.hour = hour
-        self.minute = minute
-        self.second = second
-        self.utcoffset = utcoffset
-        self.dt = dt.datetime(year, month, day, hour, minute, second)  # could add timezone info?
- 
-        self.temp = temp    # near-sfc air temp (deg. C)
-        self.press = press  # near-sfc air pressure (mb)
+        # validate lat/lon
+        val_wri(lat, (-90, 90), name="lat")
+        val_wri(lon, (-180, 180), name="lon")
 
-        # ozone, water, etc
-        self.tau500 = tau500
+        # validate date/time inputs by trying to make a datetime
+        dt = datetime.datetime(year, month, day, hour, minute, second)
+        # TODO: could incorporate timezone info (with utcoffset)?
 
-        self.watvap = watvap
-        self.ozone = ozone
+        # utcoffset
+        val_wri(utcoffset, (-12, 12), name="utcoffset")
+        # note: technically can be +14 max (https://en.wikipedia.org/wiki/List_of_UTC_time_offsets)
+
+        # temperature (recall deg. C, supposed to be near-sfc)
+        val_wri(temp, (-273.15 + 1e-6, None), (-70.0, 100.0), name="temp")
+
+        # pressure (recall mb, supposed to be near-sfc pressure)
+        val_wri(press, (1e-6, None), (500, 1200), name="press")
+
+        # tau500 (supposed to be a clear sky model so should be low)
+        val_wri(tau500, (0, None), (0.01, 1.0), name="tau500")
+
+        # watvap
+        val_wri(watvap, (0, None), (0.1, 10.0), name="watvap")
+        
+        # ozone is special since -1 is an allowed value as a flag
+        # (that we use by default)
+        # so neglecting validating for now
+
+        #> having passed input validation, construct input param dict
+        # self.sp2_inputs = {
+        #     "lat": lat,
+        #     "lon": lon,
+        #     "year": year,
+        #     "month": month,
+        #     "day": day,
+        #     "hour": hour,
+        #     "minute": minute,
+        #     "second": second,
+        #     "utcoffset": utcoffset,
+        #     "temp": temp,
+        #     "press": press,
+        #     "tau500": tau500,
+        #     "watvap": watvap,
+        #     "ozone": ozone,
+        # }
+
+        # since we are using the same variable names, 
+        # we can grab the ones we need this way 
+        current_locals = {k:v for k, v in locals().items()}
+        self.sp2_inputs = {
+            name: current_locals[name]
+            for name in SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES
+        }
+        # ^ could be one expression, iterating over locals with an if
+
 
         #> get ready for output
 
@@ -363,7 +395,7 @@ class model():
         """
         
         # run using selected runner
-        sza, wl, Idr, Idf = _recompile_run(self)  # only this one is set up
+        sza, wl, Idr, Idf = _recompile_run(**self.sp2_inputs)  # only this one is set up
 
 
         #> check sza (if check value provided)
