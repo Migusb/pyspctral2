@@ -188,8 +188,6 @@ class model():
         temp=27, press=1010,
         tau500=0.27, watvap=1.42, ozone=-1.0, 
         casename='test', ID='001',
-        sza_check=None,
-        cc_correct=False, cc_p1=1.0, cc_p2=0.3,
         ):
 
         self.lat = lat
@@ -207,21 +205,11 @@ class model():
         self.temp = temp    # near-sfc air temp (deg. C)
         self.press = press  # near-sfc air pressure (mb)
 
-        self.cc_correct = cc_correct
-        self.cc_p1 = cc_p1
-        self.cc_p2 = cc_p2
-
         # ozone, water, etc
         self.tau500 = tau500
-        if self.cc_correct:
-            self.watvap = watvap * 1.2 * 1.2 * self.cc_p1
-            #^ climatologically higher watvap for cloudy conditions + 
-            #  increase in water vapor path due to multiple scattering within cloud
-        else:
-            self.watvap = watvap
-        self.ozone = ozone
 
-        self.sza_check = sza_check
+        self.watvap = watvap
+        self.ozone = ozone
 
         #> get ready for output
 
@@ -246,9 +234,16 @@ class model():
         
 
 
-    def run(self):
+    def run(self, *, sza_check=None):
         """ 
         Run the SPCTRAL2 C program using the selected method (C code or Cython). 
+
+        Parameters
+        ----------
+        sza_check : float, optional
+            SZA (solar zenith angle) value calculated by another program
+            to check that NREL SOLPOS is working satisfactorily
+        
         """
         
         # run using selected runner
@@ -257,14 +252,16 @@ class model():
 
         #> check sza (if check value provided)
         #  first row in raw file is solar zenith angle
-        if self.sza_check:
+        if sza_check is not None:
+
+            assert isinstance(sza_check, float)
             # with open(self.raw_ofname, 'r') as f:
             #     sza_sp2 = float(f.readline().rstrip())
             sza_sp2 = sza
-            if abs(sza_sp2 - self.sza_check) > 0.1:  # should be very close
+            if abs(sza_sp2 - sza_check) > 0.1:  # should be very close
                 print('SZA issue:')
                 print('  sp2  : {:.3f}'.format(sza_sp2))
-                print('  check: {:.3f}'.format(self.sza_check))
+                print('  check: {:.3f}'.format(sza_check))
             else:
                 print('SZA matches check.')
 
@@ -274,6 +271,7 @@ class model():
         measured_units='E', measured_val=None, measured_bnds=(0.4, 0.7),
         total_solar=None,
         plot=False, save_plot=False,
+        cc_correct=False, cc_p1=1.0, cc_p2=0.3,
         ):
         """Apply corrections to raw SPCTRAL2 outputs
 
@@ -298,9 +296,22 @@ class model():
             A measurement of total solar irradiance (direct+diffuse; W/m^2)
             We can use this to correct the regions outside the measured band (e.g., PAR)
             Only use this in addition to a measured band value!
-
+        cc_correct : bool
+            Whether to apply the (experimental) cloud corrections
+        cc_p1 : float
+            Bird et al. (1987) cloud-correction parameter 1
+            for wavelengths in range <= 0.55 um
+        cc_p1 : float
+            Bird et al. (1987) cloud-correction parameter 2
+            for wavelengths in range 0.5--0.926 um
 
         """
+        # TODO: move cloud correction to separate fn (can still pass kwargs to it from this one)
+        # TODO: cloud correction fn should optionally run with the watvap enhancement previously in __init__:
+        # if self.cc_correct:
+        #     self.watvap = watvap * 1.2 * 1.2 * self.cc_p1
+        #     #^ climatologically higher watvap for cloudy conditions + 
+        #     #  increase in water vapor path due to multiple scattering within cloud
 
         #files = glob('{:s}/raw/*.csv'.format(self.outdir))
 
@@ -344,7 +355,7 @@ class model():
 
         #> Bird et al. (1987) suggested cloud correction to diffuse spectrum
         #  but adding a parameter to increase/decrease the magnitude of the changes
-        if self.cc_correct:
+        if cc_correct:
             wl_cc_1 = wl <= 0.55
             wl_cc_2 = (wl >= 0.50) & (wl <= 0.926)
             cc_1 = (wl[wl_cc_1] + 0.45)**(-1.0)  # first correction to Idf
@@ -365,8 +376,8 @@ class model():
             # convert a fraction of direct to diffuse
             # based on input fraction related to how much the Sun is obscured 
             # i.e., transmissivity of the direct beam through cloud layer
-            Idf += Idr * (1-self.cc_p2)
-            Idr -= Idr * (1-self.cc_p2)
+            Idf += Idr * (1-cc_p2)
+            Idr -= Idr * (1-cc_p2)
             #^ for now at all wavelengths equally
 
 
