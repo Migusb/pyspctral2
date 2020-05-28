@@ -33,7 +33,7 @@ import matplotlib.pyplot as plt
 
 # %% language="bash"
 # #rm -rf pyspctral2
-# git clone https://github.com/zmoon92/pyspctral2.git
+# git clone --depth 1 https://github.com/zmoon92/pyspctral2.git
 # #rm -rf pyspctral2/.git  # don't need the Git history
 
 # %% [markdown]
