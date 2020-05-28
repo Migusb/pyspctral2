@@ -13,6 +13,9 @@
 #     name: conda-env-py3d-py
 # ---
 
+# %%
+#pylint: disable=unnecessary-semicolon
+
 # %% [markdown]
 # # Test functionality for the default case
 
