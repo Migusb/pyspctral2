@@ -1,6 +1,6 @@
 
 """
-Python module to run the SPCTRAL2 C code and catch output
+Run the SPCTRAL2 C code.
 
 
 typical call sequence:
@@ -12,23 +12,17 @@ typical call sequence:
 import datetime
 # from glob import glob
 import os
-#from pathlib2 import Path  # for py2 compatability
 import subprocess
 
 import numpy as np
 import xarray as xr
 
 
-_this_dir = os.path.dirname(os.path.realpath(__file__))
-C_code_path = '{:s}/C_code'.format(_this_dir)  # loc of SPCTRAL2 and solpos C code
-C_template_path = '{:s}/run_spctral2_template.c'.format(C_code_path)
-cwd = os.getcwd()
-
-micron = u'\u03BCm'
-
-with open(C_template_path, 'r') as f:
-    C_template = f.read()
-
+_THIS_DIR = os.path.dirname(os.path.realpath(__file__))
+C_CODE_PATH = f'{_THIS_DIR:s}/C_code'  # loc of SPCTRAL2 and solpos C code
+C_TEMPLATE_PATH = f'{C_CODE_PATH:s}/run_spctral2.c.tpl'
+CWD = os.getcwd()
+# TODO: upgrade to use pathlib (and check paths exist?)
 
 
 SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES = [
@@ -39,14 +33,6 @@ SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES = [
     "tau500", "watvap", "ozone",
     # "tilt", "aspect",  # < currently these values are hardcoded in the runners
 ]
-
-
-# lat=40.0, lon=-105.0, 
-# year=2014, month=7, day=1,
-# hour=12, minute=0, second=0,
-# utcoffset=-5.,
-# temp=27, press=1010,
-# tau500=0.27, watvap=1.42, ozone=-1.0, 
 
 
 # just to see if it will run or not... (not for correctness)
@@ -155,8 +141,6 @@ def validate_within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(),
 
 
 
-
-
 def _recompile_run(sp2_inputs):
     """
     Use a modified version of the runner program 
@@ -180,10 +164,13 @@ def _recompile_run(sp2_inputs):
     #
     #> create C code
     #
+    with open(C_TEMPLATE_PATH, 'r') as f:
+        C_template = f.read()
+
     C_code = C_template.format(**sp2_inputs)
     # print(C_code)
 
-    os.chdir(C_code_path)
+    os.chdir(C_CODE_PATH)
 
     cfname = 'tmp.c'
     with open(cfname, 'w') as f:
@@ -209,7 +196,7 @@ def _recompile_run(sp2_inputs):
     # https://stackoverflow.com/a/5005419
 
     subprocess.run(cmd.split())
-    os.chdir(cwd)
+    os.chdir(CWD)
 
     #
     #> run the C code
@@ -220,7 +207,7 @@ def _recompile_run(sp2_inputs):
 
     # TODO: use tempfile from std lib to generate unique files to avoid possible conflict
 
-    cmd2 = f"{C_code_path:s}/{xfname:s}"
+    cmd2 = f"{C_CODE_PATH:s}/{xfname:s}"
     with open(raw_ofname, 'w') as f:
         subprocess.run(cmd2, stdout=f)
 
@@ -264,7 +251,7 @@ class model():
     press
         pressure (surface pressure at the location) (mb/hPa)
     tau500
-        aerosol optical depth at 0.5 um (500 nm), base e
+        aerosol optical depth at 0.5 μm (500 nm), base e
         set to 0.0 to ignore (-1.0 to silently fail with warning in output file...)
         default value (from original C example run script) = 0.2, from Excel version = 0.27 (midrange)
         typical range: [0.05, 0.55] for clear sky
@@ -339,25 +326,7 @@ class model():
         
         # ozone is special since -1 is an allowed value as a flag
         # (that we use by default)
-        # so neglecting validating for now
-
-        #> having passed input validation, construct input param dict
-        # self.sp2_inputs = {
-        #     "lat": lat,
-        #     "lon": lon,
-        #     "year": year,
-        #     "month": month,
-        #     "day": day,
-        #     "hour": hour,
-        #     "minute": minute,
-        #     "second": second,
-        #     "utcoffset": utcoffset,
-        #     "temp": temp,
-        #     "press": press,
-        #     "tau500": tau500,
-        #     "watvap": watvap,
-        #     "ozone": ozone,
-        # }
+        # so neglecting validating for now (until update the validator to allow this)
 
         # since we are using the same variable names, 
         # we can grab the ones we need this way 
@@ -367,33 +336,13 @@ class model():
             for name in SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES
         }
         # ^ could be one expression, iterating over locals with an if
-        # TODO: separate validation from __init__ so safely change values and run again
+        # TODO: separate validation from __init__ so safely change values and run again?
 
-
-        #> get ready for output
-
+        # in prep for running
         self._has_been_run = False
         self._corrected = False
-
-        # self.casename = casename  # group of runs
-        # self.ID = ID  # identifier for one run of the group
-        # dirbases = ['img', 'raw', 'corrected']
-        # dirroot = './out/{:s}'.format(casename)
-        
-        # TODO: check if desired ID already exists in the out dir and give warning or error
-        # TODO: instead of 'out', more descriptive name (like pyspctral2_out) 
-        #       for output directory (needs to be changed multiple places)
-
-        # self.outdir = dirroot
-
-        # for dirbase in dirbases:
-        #     os.makedirs('{:s}/{:s}'.format(dirroot, dirbase), exist_ok=True)  # exist_ok only in py3 version
-        #     #ps = '{:s}/{:s}'.format(dirroot, dirbase)  # py2 exist_ok workaround using pathlib2
-        #     #Path(ps).mkdir(parents=True, exist_ok=True)
-
-        # self.raw_ofname = '{:s}/raw/{:s}.csv'.format(self.outdir, self.ID)
-        # self.corrected_ofname = '{:s}/corrected/{:s}.csv'.format(self.outdir, self.ID)
-        
+        self._out_raw = False
+        self.out = False        
 
 
     def run(self, *, sza_check=None):
@@ -408,6 +357,7 @@ class model():
         
         """
         
+        # for now, running again not allowed
         if self._has_been_run:
             raise Exception("Create a new model object to run again.")
 
@@ -419,20 +369,18 @@ class model():
         #> check sza (if check value provided)
         #  first row in raw file is solar zenith angle
         if sza_check is not None:
+            assert isinstance(sza_check, (int, float))
 
-            sza = out["sza"]
+            sza_sp2 = out["sza"]
 
-            assert isinstance(sza_check, float)
-            # with open(self.raw_ofname, 'r') as f:
-            #     sza_sp2 = float(f.readline().rstrip())
-            sza_sp2 = sza
             if abs(sza_sp2 - sza_check) > 0.1:  # should be very close
                 print('SZA issue:')
-                print('  sp2  : {:.3f}'.format(sza_sp2))
-                print('  check: {:.3f}'.format(sza_check))
+                print(f'  `sp2`  : {sza_sp2:.3f}')
+                print(f'  `check`: {sza_check:.3f}')
             else:
                 print('SZA matches check.')
 
+        #
         #> create output xarray with the calculated values
         #  (could be separate fn) 
         
@@ -445,23 +393,25 @@ class model():
         time = self.dt  # datetime
         sdt = self.dt.strftime('%Y-%m-%d %H:%M:%S')
 
-        # dwl should defined at wlc (wavelength band centers)
+        # dwl (wavelength band widths) should be defined at wlc (wavelength band centers)
+        # but this depends on integration/interpolation method used,
+        # so for now we don't do it here
 
         # we want it to be easily concat-able (in case running for multiple times)
         # so using a time coordinate variable (with one value)
         # we have to modify the arrays to support this (adding dim)
         # -> may undo this at some point
         dset = xr.Dataset(
-            coords={'wl': ('wl', wl, {'units': micron, 'long_name': 'wavelength'}), 
+            coords={'wl': ('wl', wl, {'units': 'μm', 'long_name': 'wavelength'}), 
                     'time': np.atleast_1d(time)}, 
             data_vars={
                 'Idr': (
                     ('time', 'wl'), Idr[np.newaxis, :], 
-                    {'units': f'W m^-2 {micron}^-1', 'long_name': 'direct beam solar irradiance'}
+                    {'units': f'W m^-2 μm^-1', 'long_name': 'direct beam solar irradiance'}
                 ),
                 'Idf': (
                     ('time', 'wl'), Idf[np.newaxis, :], 
-                    {'units': f'W m^-2 {micron}^-1', 'long_name': 'diffuse solar irradiance'}
+                    {'units': f'W m^-2 μm^-1', 'long_name': 'diffuse solar irradiance'}
                 ),
                 'sdt': ('time', np.atleast_1d(sdt), {'long_name': 'datetime string'}),
                 'sza': ('time', np.atleast_1d(sza), {'units': 'deg.', 'long_name': 'solar zenith angle'}),
@@ -474,9 +424,8 @@ class model():
         #> return and store (probably only need to do one)
         self._out_raw = dset
         self.out = self._out_raw  # until correction happens?
-        # return dset
 
-        # to enable the chain `model().run().out` to get a dset
+        # to enable chains like `model().run().out` and `model().run().plot()`
         return self
 
 
@@ -573,9 +522,9 @@ def correct(dset,
     measured_units : str
         'E' (W/m^2) or 'photons' (photon flux density)
     measured_val : float
-        A measured broadband irradiance value (umol photons / m^2 / s)
+        A measured broadband irradiance value (μmol photons / m^2 / s)
     measured_bnds : tuple
-        Wavelength band bounds for the measured irradiance value (um) 
+        Wavelength band bounds for the measured irradiance value (μm) 
     total_solar : float
         A measurement of total solar irradiance (direct+diffuse; W/m^2)
         We can use this to correct the regions outside the measured band (e.g., PAR)
@@ -584,10 +533,10 @@ def correct(dset,
         Whether to apply the (experimental) cloud corrections
     cc_p1 : float
         Bird et al. (1987) cloud-correction parameter 1
-        for wavelengths in range <= 0.55 um
+        for wavelengths in range <= 0.55 μm
     cc_p1 : float
         Bird et al. (1987) cloud-correction parameter 2
-        for wavelengths in range 0.5--0.926 um
+        for wavelengths in range 0.5--0.926 μm
 
     """
     # TODO: move cloud correction to separate fn (can still pass kwargs to it from this one)
@@ -684,7 +633,7 @@ def correct(dset,
     dwl_meas_not = dwl[wl_meas_not]
 
     if measured_units == 'photons':
-        # convert SPCTRAL2 sub-band irradiances in W/m^2/um to broadband in photon flux units (photons/m^2/s)
+        # convert SPCTRAL2 sub-band irradiances in W/m^2/μm to broadband in photon flux units (photons/m^2/s)
         I_meas_sp2 = ( I_meas_sp2_all*dwl_meas / (6.626e-34*2.998e8/(wl[wl_meas]*1e-6)) ).sum() / 6.022e23 * 1e6
     elif measured_units == 'E':  # E units (W/m^2)
         I_meas_sp2 = ( I_meas_sp2_all*dwl_meas ).sum()
