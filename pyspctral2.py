@@ -30,6 +30,119 @@ with open(C_template_path, 'r') as f:
     C_template = f.read()
 
 
+
+SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES = [
+    "lat", "lon", 
+    "year", "month", "day", "hour", "minute", "second",
+    "utcoffset",
+    "temp", "press",
+    "tau500", "watvap", "ozone",
+    "tilt", "aspect",
+]
+
+
+# just to see if it will run or not... (not for correctness)
+def test_run_csp2_py():
+    from C_code_cython.csp2_py import run_spctral2
+
+    return run_spctral2(lat=40.0, lon=-105.0, 
+        year=2014, month=7, day=1,
+        hour=12, minute=0, second=0,
+        utcoffset=-5.,
+        temp=27, press=1010,
+        tau500=0.27, watvap=1.42, ozone=-1.0)
+
+
+def _is_tool(name):
+    """Check whether `name` is on PATH and marked as executable.
+    
+    ref: https://stackoverflow.com/a/34177358
+    """
+
+    from shutil import which
+
+    return which(name) is not None
+
+
+def _recompile_run(m):
+    """
+    Use a modified version of the runner program 
+    provided with the SPCTRAL2 C distribution (`spectest.c`).
+
+    This requires modifying the C code of the runner program and recompiling it 
+    every time. The runner program writes the data to a text file.
+
+    PARAMETERS
+    ----------
+    m : model object
+
+    RETURNS
+    -------
+    None
+        since for now we pass and modify the model object
+
+    """
+
+    # hack for now
+    self = m
+
+    #> create C code
+    C_code = C_template.format(lon=self.lon, lat=self.lat,
+        year=self.year, month=self.month, day=self.day,
+        hour=self.hour, minute=self.minute, second=self.second,
+        utcoffset=self.utcoffset,
+        temp=self.temp, press=self.press, 
+        tau500=self.tau500, watvap=self.watvap, ozone=self.ozone,
+        )
+    #print C_code
+
+    os.chdir(C_code_path)
+
+    cfname = 'tmp.c'
+    with open(cfname, 'w') as f:
+        f.writelines(C_code)
+
+    #> compile C code
+    # TODO: allow compiler choice as fn param
+    
+    # for now use gcc but check
+    if not _is_tool("gcc"):
+        raise Exception(
+            "GNU C compiler `gcc` not found. "
+            "Must install to use this SPCTRAL2 run method."
+        )
+    # for more general case should use `try: ...` and handle `OSError` if it arises
+    # ref: https://stackoverflow.com/a/11210185
+    
+    xfname = 'tmp.out'
+    #cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
+    #cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
+    cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s} -lm'.format(cfname=cfname, xfname=xfname) 
+    # ^ I guess I was using a quite old gcc before (linking math was not required)
+    # https://stackoverflow.com/a/5005419
+
+    call(cmd.split())
+    os.chdir(cwd)
+
+    #> run the C code
+    #  catching output in ofname
+
+    #cmd2 = './{xfname:s} > {ofname:s}'.format(xfname=xfname, ofname=ofname)
+    cmd2 = '{c:s}/{xfname:s}'.format(xfname=xfname, c=C_code_path)
+    with open(self.raw_ofname, 'w') as f:
+        call(cmd2, stdout=f)
+
+    #> load raw data from the SPCTRAL2 run 
+    #  first row in raw file is NREL SPA computed solar zenith angle
+    #  the rest of the rows are three cols: wavelength, direct, diffuse
+    with open(self.raw_ofname, 'r') as f:
+        sza = float(f.readline().rstrip())
+    wl, Idr, Idf = np.loadtxt(self.raw_ofname, delimiter=',', skiprows=1, unpack=True)
+
+    return sza, wl, Idr, Idf
+
+
+
 class model():
     """Wrapper for the SPCTRAL2 model (C version).
     
@@ -134,44 +247,20 @@ class model():
 
 
     def run(self):
-        """ """
+        """ 
+        Run the SPCTRAL2 C program using the selected method (C code or Cython). 
+        """
         
-        #> create C code
-        C_code = C_template.format(lon=self.lon, lat=self.lat,
-                year=self.year, month=self.month, day=self.day,
-                hour=self.hour, minute=self.minute, second=self.second,
-                utcoffset=self.utcoffset,
-                temp=self.temp, press=self.press, 
-                tau500=self.tau500, watvap=self.watvap, ozone=self.ozone,
-                )
-        #print C_code
-        
-        os.chdir(C_code_path)
+        # run using selected runner
+        sza, wl, Idr, Idf = _recompile_run(self)  # only this one is set up
 
-        cfname = 'tmp.c'
-        with open(cfname, 'w') as f:
-            f.writelines(C_code)
-
-        #> compile C code
-        xfname = 'tmp.out'
-        #cmd = 'icc {cfname:s} spectrl2.c spectrl2.h solpos.c solpos00.h -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
-        cmd = 'gcc {cfname:s} spectrl2.c solpos.c -o {xfname:s}'.format(cfname=cfname, xfname=xfname) 
-        call(cmd.split())
-        os.chdir(cwd)
-
-        #> run the C code
-        #  catching output in ofname
-
-        #cmd2 = './{xfname:s} > {ofname:s}'.format(xfname=xfname, ofname=ofname)
-        cmd2 = '{c:s}/{xfname:s}'.format(xfname=xfname, c=C_code_path)
-        with open(self.raw_ofname, 'w') as f:
-            call(cmd2, stdout=f)
 
         #> check sza (if check value provided)
         #  first row in raw file is solar zenith angle
         if self.sza_check:
-            with open(self.raw_ofname, 'r') as f:
-                sza_sp2 = float(f.readline().rstrip())
+            # with open(self.raw_ofname, 'r') as f:
+            #     sza_sp2 = float(f.readline().rstrip())
+            sza_sp2 = sza
             if abs(sza_sp2 - self.sza_check) > 0.1:  # should be very close
                 print('SZA issue:')
                 print('  sp2  : {:.3f}'.format(sza_sp2))

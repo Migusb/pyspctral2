@@ -5,6 +5,12 @@
 /examples/pyspctral2
 /examples/*.ipynb
 
+*.so
+
+# cython build files
+build/
+C_code_cython/spctral2.c
+
 __pycache__/
 .vscode/
 .DS_Store
