@@ -141,6 +141,39 @@ def validate_within_range_inclusive(x, hard_bounds=(None, None), soft_bounds=(),
 
 
 
+# TODO: don't really need two copies of the C code. that was a temporary measure
+
+def _cython_run(sp2_inputs):
+    """Run SPCTRAL2 via Cython.
+
+    PARAMETERS
+    ----------
+    sp2_inputs : dict
+        of the inputs to be used in the C code template
+
+    RETURNS
+    -------
+    dict 
+        of the key outputs, keys: ["wl", "Idr", "Idf", "sza"]
+    
+    """
+
+    # from .C_code_cython.csp2_py import run_spctral2
+    from C_code_cython.csp2_py import run_spctral2  # will later be relative import
+
+    out = run_spctral2(**sp2_inputs)
+
+    print(out.keys())
+
+    return {
+        "sza": out["zenref"], 
+        "wl": np.asarray(out["specx"]), 
+        "Idr": np.asarray(out["specdir"]), 
+        "Idf": np.asarray(out["specdif"]),
+        "sp2_out_all_raw": out
+    }
+
+
 def _recompile_run(sp2_inputs):
     """
     Use a modified version of the runner program 
@@ -156,8 +189,8 @@ def _recompile_run(sp2_inputs):
 
     RETURNS
     -------
-    None
-        since for now we pass and modify the model object
+    dict 
+        of the key outputs, keys: ["wl", "Idr", "Idf", "sza"]
 
     """
 
@@ -345,7 +378,7 @@ class model():
         self.out = False        
 
 
-    def run(self, *, sza_check=None):
+    def run(self, *, sza_check=None, run_method="recompile"):
         """ 
         Run the SPCTRAL2 C program using the selected method (C code or Cython). 
 
@@ -354,7 +387,8 @@ class model():
         sza_check : float, optional
             SZA (solar zenith angle) value calculated by another program
             to check that NREL SOLPOS is working satisfactorily
-        
+        run_method : str {"recompile", "cython"}
+
         """
         
         # for now, running again not allowed
@@ -362,7 +396,15 @@ class model():
             raise Exception("Create a new model object to run again.")
 
         # run using selected runner
-        out = _recompile_run(self.sp2_inputs)  # only this one is set up
+        if run_method == "recompile":
+            out = _recompile_run(self.sp2_inputs)
+        elif run_method == "cython":
+            out = _cython_run(self.sp2_inputs)
+        else:
+            raise ValueError(
+                f"Invalid `run_method` {run_method!r}. "
+                "Valid options are 'recompile' and 'cython'."
+            )
 
         self._has_been_run = True
 

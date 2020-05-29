@@ -51,6 +51,8 @@ cdef extern from "spectrl2_2.h":
         float watvap
         float ozone
 
+        float zenref
+
         
     # void* specdat
 

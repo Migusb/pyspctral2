@@ -11,7 +11,7 @@ This module defines the runner function.
 cimport cspctral2
 
 
-def run_spctral2(
+def run_spctral2(*, 
     lat, lon,
     year, month, day, hour, minute, second,
     utcoffset,
@@ -26,7 +26,6 @@ def run_spctral2(
     When run in Python, this function returns a `dict`, where the keys correspond to 
     the `struct` members defined in `cspctral2.pxd`
     """
-    print('hello')
 
     cdef cspctral2.specdattype sp2
     # ctypedef struct cspctral2.specdattype sp2

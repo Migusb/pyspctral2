@@ -13,6 +13,10 @@ Therefore I am including the (mostly) untouched files here, as downloaded from t
 
 Between the different versions (C, Fortran, Excel) of SPCTRAL2, they [name the program slightly differently](https://www.nrel.gov/grid/solar-resource/spectral.html). I stick with "spctral2" because, although lowercase, it is faithful to the official name.
 
+### Other edits:
+
+* Adding solar zenith angle (`zenref`) from SOLPOS as a SPCTRAL2 output, in order to check the value being used.
+
 
 ### Cython code:
 * `cspctral2.pxd`: external declarations (~ the header file(s))
