@@ -2,11 +2,13 @@
 
 Basic Python wrapper for functionality of the SPCTRAL2 atmospheric radiative transfer C code.
 
-This is a single-file Python module, but the presence of the C_code in the expected place is required.
-
 * Current version is a naive approach, requiring compiling the C code for every run.
-* Future version will include a Cython-based interface
-* or/and the code rewritten in Python
+* Future version will include a Cython-based interface (in-progress)
+
+See also [SolarUtils](https://github.com/SunPower/SolarUtils), which provides a SPCTRAL2 wrapper
+using ctypes, and adds the ability to optionally specify surface albedos at 6 wavelengths,
+which SPCTRAL2 uses to create the interpolated albedo spectrum it uses internally
+(`pyspctral2` does not currently consider support this input; the default settings are used).
 
 ## SPCTRAL2
 
