@@ -37,7 +37,7 @@ SPCTRAL2_MODEL_REQUIRED_INPUT_PARAMETER_NAMES = [
 
 # just to see if it will run or not... (not for correctness)
 def test_run_csp2_py():
-    from C_code_cython.csp2_py import run_spctral2
+    from .C_code_cython.csp2_py import run_spctral2
 
     return run_spctral2(lat=40.0, lon=-105.0, 
         year=2014, month=7, day=1,
